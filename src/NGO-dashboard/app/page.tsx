@@ -1,8 +1,27 @@
+"use client"
+
 import { DashboardHeader } from "@/components/dashboard-header"
 import { FinancialOverview } from "@/components/financial-overview"
 import { AidRecipients } from "@/components/aid-recipients"
+import { LoginForm } from "@/components/login-form"
+import { useAuth } from "@/contexts/auth-context"
+import { Loader2 } from "lucide-react"
 
 export default function NGODashboard() {
+  const { isAuthenticated, isLoading } = useAuth()
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return <LoginForm />
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <DashboardHeader />
