@@ -1,0 +1,39 @@
+# macOS
+.DS_Store
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files (keep examples tracked)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Test and coverage
+.coverage*
+htmlcov/
+.pytest_cache/
+
+# Caches
+.ruff_cache/
+.cache/
+
+# Editors/IDEs
+.vscode/
+.idea/
+
+# Logs
+*.log

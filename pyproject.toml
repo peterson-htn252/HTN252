@@ -1,0 +1,35 @@
+[project]
+name = "HTN25"
+version = "0.1.0"
+description = "HTN project."
+readme = "README.md"
+authors = [
+    { name = "Peterson Guo", email = "petersonguo@gmail.com" },
+]
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi",
+    "numpy>=1.20",
+    "polygon-api-client",
+    "python-dotenv",
+    "boto3",
+    "requests",
+    "flasgger",
+    "apispec",
+    "marshmallow",
+    "apispec_webframeworks"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "mypy",
+]
+
+[project.scripts]
+# my-command = "my_awesome_package.cli:main"
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
