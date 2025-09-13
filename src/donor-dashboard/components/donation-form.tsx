@@ -1,0 +1,467 @@
+"use client"
+
+import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { CreditCard, Shield, CheckCircle, AlertCircle, Loader2, Wallet } from "lucide-react"
+
+interface DonationFormProps {
+  onDonationComplete?: (donationId: string, blockchainId: string) => void
+}
+
+type PaymentMethod = "card" | "ripple"
+
+const programs = [
+  {
+    id: "typhoon",
+    name: "Typhoon Relief Program",
+    description: "Emergency aid for typhoon victims in the Philippines",
+    urgency: "high",
+    raised: 45000,
+    goal: 100000,
+  },
+  {
+    id: "earthquake",
+    name: "Earthquake Emergency Fund",
+    description: "Immediate assistance for earthquake survivors in Turkey",
+    urgency: "critical",
+    raised: 78000,
+    goal: 150000,
+  },
+  {
+    id: "flood",
+    name: "Flood Recovery Initiative",
+    description: "Long-term recovery support for flood-affected communities",
+    urgency: "medium",
+    raised: 23000,
+    goal: 75000,
+  },
+]
+
+export function DonationForm({ onDonationComplete }: DonationFormProps) {
+  const [step, setStep] = useState<"select" | "amount" | "payment" | "processing" | "complete">("select")
+  const [selectedProgram, setSelectedProgram] = useState<string>("")
+  const [donationAmount, setDonationAmount] = useState("")
+  const [email, setEmail] = useState("")
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card")
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [donationResult, setDonationResult] = useState<{
+    donationId: string
+    blockchainId: string
+    amount: number
+    program: string
+    paymentMethod: string
+  } | null>(null)
+
+  const selectedProgramData = programs.find((p) => p.id === selectedProgram)
+
+  const handleProgramSelect = (programId: string) => {
+    setSelectedProgram(programId)
+    setStep("amount")
+  }
+
+  const handleAmountSubmit = () => {
+    if (donationAmount && Number.parseFloat(donationAmount) > 0) {
+      setStep("payment")
+    }
+  }
+
+  const handlePaymentSubmit = async () => {
+    setIsProcessing(true)
+    setStep("processing")
+
+    try {
+      if (paymentMethod === "card") {
+        // Stripe payment processing
+        const response = await fetch("/api/payments/stripe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: Number.parseFloat(donationAmount) * 100, // Convert to cents
+            currency: "usd",
+            programId: selectedProgram,
+            email,
+          }),
+        })
+
+        if (!response.ok) throw new Error("Payment failed")
+
+        const { paymentIntent, donationId } = await response.json()
+
+        // Record on XRPL for transparency
+        const xrplResponse = await fetch("/api/xrpl/record-donation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            donationId,
+            amount: Number.parseFloat(donationAmount),
+            programId: selectedProgram,
+            stripePaymentId: paymentIntent.id,
+          }),
+        })
+
+        const { blockchainTxHash } = await xrplResponse.json()
+
+        setDonationResult({
+          donationId,
+          blockchainId: blockchainTxHash,
+          amount: Number.parseFloat(donationAmount),
+          program: selectedProgramData?.name || "",
+          paymentMethod: "Credit Card",
+        })
+      } else {
+        // Direct Ripple/XRPL payment
+        const response = await fetch("/api/payments/xrpl", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: Number.parseFloat(donationAmount),
+            programId: selectedProgram,
+            email,
+          }),
+        })
+
+        if (!response.ok) throw new Error("XRPL payment failed")
+
+        const { donationId, txHash } = await response.json()
+
+        setDonationResult({
+          donationId,
+          blockchainId: txHash,
+          amount: Number.parseFloat(donationAmount),
+          program: selectedProgramData?.name || "",
+          paymentMethod: "Ripple (XRPL)",
+        })
+      }
+
+      setStep("complete")
+      onDonationComplete?.(donationResult?.donationId || "", donationResult?.blockchainId || "")
+    } catch (error) {
+      console.error("Payment error:", error)
+      // Handle error state - could add error step
+      setStep("payment")
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const resetForm = () => {
+    setStep("select")
+    setSelectedProgram("")
+    setDonationAmount("")
+    setEmail("")
+    setPaymentMethod("card")
+    setDonationResult(null)
+  }
+
+  if (step === "select") {
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h3 className="text-2xl font-bold mb-2">Choose a Program to Support</h3>
+          <p className="text-muted-foreground">
+            Select an emergency relief program where your donation will make an immediate impact
+          </p>
+        </div>
+
+        <div className="grid gap-4">
+          {programs.map((program) => (
+            <Card
+              key={program.id}
+              className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-primary/50"
+              onClick={() => handleProgramSelect(program.id)}
+            >
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">{program.name}</CardTitle>
+                  <Badge
+                    variant={
+                      program.urgency === "critical"
+                        ? "destructive"
+                        : program.urgency === "high"
+                          ? "default"
+                          : "secondary"
+                    }
+                  >
+                    {program.urgency} priority
+                  </Badge>
+                </div>
+                <CardDescription>{program.description}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Progress</span>
+                    <span>
+                      ${program.raised.toLocaleString()} of ${program.goal.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all"
+                      style={{ width: `${(program.raised / program.goal) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (step === "amount") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Donation Amount</CardTitle>
+          <CardDescription>Supporting: {selectedProgramData?.name}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              {[25, 50, 100].map((amount) => (
+                <Button
+                  key={amount}
+                  variant={donationAmount === amount.toString() ? "default" : "outline"}
+                  onClick={() => setDonationAmount(amount.toString())}
+                >
+                  ${amount}
+                </Button>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="custom-amount">Custom Amount ($)</Label>
+              <Input
+                id="custom-amount"
+                type="number"
+                placeholder="Enter custom amount"
+                value={donationAmount}
+                onChange={(e) => setDonationAmount(e.target.value)}
+                min="1"
+              />
+            </div>
+          </div>
+
+          <Alert>
+            <Shield className="h-4 w-4" />
+            <AlertDescription>
+              <strong>100% Transparent:</strong> You'll receive a blockchain reference ID to track exactly how your $
+              {donationAmount || "0"} is used.
+            </AlertDescription>
+          </Alert>
+
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => setStep("select")}>
+              Back
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={handleAmountSubmit}
+              disabled={!donationAmount || Number.parseFloat(donationAmount) <= 0}
+            >
+              Continue to Payment
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (step === "payment") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Payment Details</CardTitle>
+          <CardDescription>
+            Donating ${donationAmount} to {selectedProgramData?.name}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <Label>Payment Method</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  variant={paymentMethod === "card" ? "default" : "outline"}
+                  onClick={() => setPaymentMethod("card")}
+                  className="flex items-center gap-2 h-12"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  Credit/Debit Card
+                </Button>
+                <Button
+                  variant={paymentMethod === "ripple" ? "default" : "outline"}
+                  onClick={() => setPaymentMethod("ripple")}
+                  className="flex items-center gap-2 h-12"
+                >
+                  <Wallet className="h-4 w-4" />
+                  Ripple (XRPL)
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address (for blockchain reference)</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              <p className="text-xs text-muted-foreground">We'll send your blockchain tracking ID to this email</p>
+            </div>
+
+            {paymentMethod === "card" ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="card">Card Number</Label>
+                  <div className="relative">
+                    <Input id="card" placeholder="1234 5678 9012 3456" className="pl-10" />
+                    <CreditCard className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="expiry">Expiry Date</Label>
+                    <Input id="expiry" placeholder="MM/YY" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cvc">CVC</Label>
+                    <Input id="cvc" placeholder="123" />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <Alert>
+                <Wallet className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>Ripple Payment:</strong> You'll be redirected to complete the payment using your XRPL wallet.
+                  This creates a direct blockchain transaction for maximum transparency.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+
+          <Alert>
+            <Shield className="h-4 w-4" />
+            <AlertDescription>
+              {paymentMethod === "card"
+                ? "Your payment is secured with 256-bit SSL encryption and processed via Stripe. No registration required."
+                : "Your XRPL payment is secured by the Ripple blockchain. All transactions are publicly verifiable."}
+            </AlertDescription>
+          </Alert>
+
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => setStep("amount")}>
+              Back
+            </Button>
+            <Button className="flex-1" onClick={handlePaymentSubmit} disabled={!email || isProcessing}>
+              {paymentMethod === "card" ? `Pay $${donationAmount} with Card` : `Pay $${donationAmount} with XRPL`}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (step === "processing") {
+    return (
+      <Card>
+        <CardContent className="py-12">
+          <div className="text-center space-y-4">
+            <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
+            <h3 className="text-xl font-semibold">Processing Your Donation</h3>
+            <div className="space-y-2 text-muted-foreground">
+              {paymentMethod === "card" ? (
+                <>
+                  <p>✓ Processing payment with Stripe...</p>
+                  <p>✓ Recording on XRPL blockchain...</p>
+                  <p>⏳ Generating tracking ID...</p>
+                </>
+              ) : (
+                <>
+                  <p>✓ Connecting to XRPL network...</p>
+                  <p>✓ Broadcasting transaction...</p>
+                  <p>⏳ Confirming on blockchain...</p>
+                </>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (step === "complete" && donationResult) {
+    return (
+      <Card>
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
+            <CheckCircle className="h-6 w-6 text-green-600" />
+          </div>
+          <CardTitle className="text-2xl text-green-600">Donation Successful!</CardTitle>
+          <CardDescription>
+            Thank you for your ${donationResult.amount} donation to {donationResult.program}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <Alert>
+            <Shield className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Your Blockchain Reference ID:</strong>
+              <br />
+              <code className="text-xs font-mono break-all">{donationResult.blockchainId}</code>
+            </AlertDescription>
+          </Alert>
+
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between">
+              <span>Donation ID:</span>
+              <span className="font-mono">{donationResult.donationId}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Amount:</span>
+              <span className="font-semibold">${donationResult.amount}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Program:</span>
+              <span>{donationResult.program}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Payment Method:</span>
+              <span>{donationResult.paymentMethod}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Status:</span>
+              <Badge variant="default">Confirmed</Badge>
+            </div>
+          </div>
+
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              A confirmation email with your blockchain tracking ID has been sent to {email}. Use this ID to track how
+              your donation is distributed and used.
+            </AlertDescription>
+          </Alert>
+
+          <Button className="w-full" onClick={resetForm}>
+            Make Another Donation
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return null
+}
