@@ -1,5 +1,5 @@
 [project]
-name = "HTN25"
+name = "HTN25-2"
 version = "0.1.0"
 description = "HTN project."
 readme = "README.md"
@@ -10,14 +10,14 @@ requires-python = ">=3.9"
 dependencies = [
     "fastapi",
     "numpy>=1.20",
-    "polygon-api-client",
     "python-dotenv",
     "boto3",
     "requests",
     "flasgger",
     "apispec",
     "marshmallow",
-    "apispec_webframeworks"
+    "apispec_webframeworks",
+    "xrpl-py"
 ]
 
 [project.optional-dependencies]
