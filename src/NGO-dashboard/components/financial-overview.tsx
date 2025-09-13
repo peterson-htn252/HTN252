@@ -1,31 +1,121 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { DollarSign, TrendingUp, TrendingDown, AlertCircle } from "lucide-react"
+import { DollarSign, TrendingUp, TrendingDown, AlertCircle, Loader2 } from "lucide-react"
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts"
+import { apiClient } from "@/lib/api"
+import { DashboardStats, ExpenseBreakdown, MonthlyTrends } from "@/lib/types"
 
-const expenseData = [
-  { name: "Food Aid", value: 45000, color: "hsl(var(--chart-1))" },
-  { name: "Medical Support", value: 32000, color: "hsl(var(--chart-2))" },
-  { name: "Education", value: 18000, color: "hsl(var(--chart-3))" },
-  { name: "Emergency Relief", value: 25000, color: "hsl(var(--chart-4))" },
-  { name: "Infrastructure", value: 15000, color: "hsl(var(--chart-5))" },
-]
-
-const monthlyData = [
-  { month: "Jan", expenses: 28000, donations: 35000 },
-  { month: "Feb", expenses: 32000, donations: 38000 },
-  { month: "Mar", expenses: 45000, donations: 42000 },
-  { month: "Apr", expenses: 38000, donations: 48000 },
-  { month: "May", expenses: 42000, donations: 52000 },
-  { month: "Jun", expenses: 48000, donations: 45000 },
+const defaultColors = [
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
 ]
 
 export function FinancialOverview() {
-  const totalAvailable = 285000
-  const totalExpenses = 135000
-  const utilizationRate = (totalExpenses / totalAvailable) * 100
+  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [expenseData, setExpenseData] = useState<Array<{name: string; value: number; color: string}>>([])
+  const [monthlyData, setMonthlyData] = useState<Array<{month: string; expenses: number; donations: number}>>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+
+        // Fetch all dashboard data in parallel
+        const [dashboardStats, expenseBreakdown, monthlyTrends] = await Promise.all([
+          apiClient.getDashboardStats(),
+          apiClient.getExpenseBreakdown(),
+          apiClient.getMonthlyTrends(),
+        ])
+
+        setStats(dashboardStats)
+
+        // Format expense data with colors
+        const formattedExpenseData = expenseBreakdown.expense_breakdown.map((item, index) => ({
+          ...item,
+          color: defaultColors[index % defaultColors.length],
+        }))
+        setExpenseData(formattedExpenseData)
+
+        setMonthlyData(monthlyTrends.monthly_trends)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load dashboard data')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-3xl font-bold text-foreground">Financial Overview</h2>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Loading...</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="bg-card border-border">
+              <CardContent className="p-6">
+                <div className="animate-pulse">
+                  <div className="h-4 bg-muted rounded w-1/2 mb-4"></div>
+                  <div className="h-8 bg-muted rounded w-3/4"></div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-3xl font-bold text-foreground">Financial Overview</h2>
+          <div className="flex items-center gap-2 text-sm text-red-600">
+            <AlertCircle className="w-4 h-4" />
+            <span>Error loading data</span>
+          </div>
+        </div>
+        <Card className="bg-card border-border">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="w-5 h-5" />
+              <div>
+                <p className="font-medium">Failed to load dashboard data</p>
+                <p className="text-sm text-muted-foreground">{error}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (!stats) {
+    return null
+  }
+
+  // Convert minor units (cents) to dollars for display
+  const totalAvailable = stats.available_funds / 100
+  const totalDonations = stats.total_donations_30d / 100
+  const totalExpenses = stats.total_expenses_30d / 100
+  const utilizationRate = stats.utilization_rate
 
   return (
     <div className="space-y-6">
@@ -48,7 +138,7 @@ export function FinancialOverview() {
             <div className="text-2xl font-bold text-foreground">${totalAvailable.toLocaleString()}</div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
               <TrendingUp className="w-3 h-3 text-green-600" />
-              <span>+12% from last month</span>
+              <span>Available for distribution</span>
             </div>
           </CardContent>
         </Card>
@@ -61,7 +151,7 @@ export function FinancialOverview() {
           <CardContent>
             <div className="text-2xl font-bold text-foreground">${totalExpenses.toLocaleString()}</div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-              <span>47% of available funds</span>
+              <span>Last 30 days</span>
             </div>
           </CardContent>
         </Card>
@@ -75,7 +165,7 @@ export function FinancialOverview() {
             <Progress value={utilizationRate} className="w-full" />
             <div className="flex justify-between text-xs text-muted-foreground mt-2">
               <span>Used: ${totalExpenses.toLocaleString()}</span>
-              <span>Remaining: ${(totalAvailable - totalExpenses).toLocaleString()}</span>
+              <span>Available: ${totalAvailable.toLocaleString()}</span>
             </div>
           </CardContent>
         </Card>
@@ -103,7 +193,7 @@ export function FinancialOverview() {
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, "Amount"]} />
+                <Tooltip formatter={(value: number) => [`$${(value / 100).toLocaleString()}`, "Amount"]} />
               </PieChart>
             </ResponsiveContainer>
             <div className="grid grid-cols-2 gap-2 mt-4">
@@ -129,10 +219,10 @@ export function FinancialOverview() {
                 <YAxis
                   stroke="hsl(var(--muted-foreground))"
                   fontSize={12}
-                  tickFormatter={(value) => `$${value / 1000}k`}
+                  tickFormatter={(value) => `$${(value / 100000).toFixed(0)}k`}
                 />
                 <Tooltip
-                  formatter={(value: number) => [`$${value.toLocaleString()}`, ""]}
+                  formatter={(value: number) => [`$${(value / 100).toLocaleString()}`, ""]}
                   labelStyle={{ color: "hsl(var(--foreground))" }}
                   contentStyle={{
                     backgroundColor: "white",

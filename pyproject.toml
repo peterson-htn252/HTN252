@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.9"
 dependencies = [
     "fastapi",
+    "uvicorn[standard]",
     "numpy>=1.20",
     "python-dotenv",
     "boto3",
@@ -17,7 +18,11 @@ dependencies = [
     "apispec",
     "marshmallow",
     "apispec_webframeworks",
-    "xrpl-py"
+    "xrpl-py",
+    "PyJWT",
+    "passlib[bcrypt]",
+    "email-validator",
+    "python-multipart"
 ]
 
 [project.optional-dependencies]

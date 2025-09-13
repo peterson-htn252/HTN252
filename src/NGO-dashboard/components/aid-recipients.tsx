@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,10 +15,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Search, Plus, DollarSign, User, MapPin, Calendar } from "lucide-react"
+import { Search, Plus, DollarSign, User, MapPin, Calendar, Loader2, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { apiClient } from "@/lib/api"
+import { Recipient as APIRecipient, RecipientCreate, BalanceOperation } from "@/lib/types"
+import { useAuth } from "@/contexts/auth-context"
 
-interface Recipient {
+// Transform API recipient to local format for compatibility
+interface LocalRecipient {
   id: string
   name: string
   location: string
@@ -26,78 +30,61 @@ interface Recipient {
   walletBalance: number
   status: "active" | "pending" | "inactive"
   category: string
+  program_id: string
 }
 
-const mockRecipients: Recipient[] = [
-  {
-    id: "1",
-    name: "Maria Santos",
-    location: "Manila, Philippines",
-    registrationDate: "2024-01-15",
-    walletBalance: 250,
-    status: "active",
-    category: "Family Aid",
-  },
-  {
-    id: "2",
-    name: "Ahmed Hassan",
-    location: "Cairo, Egypt",
-    registrationDate: "2024-02-03",
-    walletBalance: 180,
-    status: "active",
-    category: "Medical Support",
-  },
-  {
-    id: "3",
-    name: "Elena Rodriguez",
-    location: "Guatemala City, Guatemala",
-    registrationDate: "2024-01-28",
-    walletBalance: 320,
-    status: "active",
-    category: "Education",
-  },
-  {
-    id: "4",
-    name: "David Okonkwo",
-    location: "Lagos, Nigeria",
-    registrationDate: "2024-02-10",
-    walletBalance: 95,
-    status: "pending",
-    category: "Emergency Relief",
-  },
-  {
-    id: "5",
-    name: "Priya Sharma",
-    location: "Mumbai, India",
-    registrationDate: "2024-01-20",
-    walletBalance: 410,
-    status: "active",
-    category: "Family Aid",
-  },
-  {
-    id: "6",
-    name: "Carlos Mendoza",
-    location: "Lima, Peru",
-    registrationDate: "2024-02-15",
-    walletBalance: 75,
-    status: "active",
-    category: "Medical Support",
-  },
-]
+function transformRecipient(apiRecipient: APIRecipient): LocalRecipient {
+  return {
+    id: apiRecipient.recipient_id,
+    name: apiRecipient.name,
+    location: apiRecipient.location,
+    registrationDate: apiRecipient.created_at.split('T')[0],
+    walletBalance: apiRecipient.wallet_balance / 100, // Convert from minor units to dollars
+    status: apiRecipient.status,
+    category: apiRecipient.category,
+    program_id: apiRecipient.program_id,
+  }
+}
 
 export function AidRecipients() {
-  const [recipients, setRecipients] = useState<Recipient[]>(mockRecipients)
+  const [recipients, setRecipients] = useState<LocalRecipient[]>([])
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedRecipient, setSelectedRecipient] = useState<Recipient | null>(null)
+  const [selectedRecipient, setSelectedRecipient] = useState<LocalRecipient | null>(null)
   const [depositAmount, setDepositAmount] = useState("")
   const [isDepositDialogOpen, setIsDepositDialogOpen] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [newRecipient, setNewRecipient] = useState({
     name: "",
     location: "",
     category: "Family Aid",
+    phone: "",
+    email: "",
   })
   const { toast } = useToast()
+  const { user } = useAuth()
+
+  // Fetch recipients data
+  useEffect(() => {
+    const fetchRecipients = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+        
+        const response = await apiClient.getRecipients(searchTerm || undefined)
+        const transformedRecipients = response.recipients.map(transformRecipient)
+        setRecipients(transformedRecipients)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load recipients')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchRecipients()
+  }, [searchTerm])
 
   const filteredRecipients = recipients.filter(
     (recipient) =>
@@ -106,8 +93,8 @@ export function AidRecipients() {
       recipient.category.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  const handleDeposit = () => {
-    if (!selectedRecipient || !depositAmount) return
+  const handleDeposit = async () => {
+    if (!selectedRecipient || !depositAmount || !user) return
 
     const amount = Number.parseFloat(depositAmount)
     if (isNaN(amount) || amount <= 0) {
@@ -119,26 +106,48 @@ export function AidRecipients() {
       return
     }
 
-    setRecipients((prev) =>
-      prev.map((recipient) =>
-        recipient.id === selectedRecipient.id
-          ? { ...recipient, walletBalance: recipient.walletBalance + amount }
-          : recipient,
-      ),
-    )
+    try {
+      setIsSubmitting(true)
+      
+      const balanceOperation: BalanceOperation = {
+        amount_minor: Math.round(amount * 100), // Convert to minor units (cents)
+        operation_type: "deposit",
+        description: `Deposit to ${selectedRecipient.name}`,
+        program_id: selectedRecipient.program_id,
+      }
 
-    toast({
-      title: "Deposit Successful",
-      description: `$${amount} has been deposited to ${selectedRecipient.name}'s wallet.`,
-    })
+      const result = await apiClient.updateRecipientBalance(selectedRecipient.id, balanceOperation)
 
-    setDepositAmount("")
-    setIsDepositDialogOpen(false)
-    setSelectedRecipient(null)
+      // Update local state
+      setRecipients((prev) =>
+        prev.map((recipient) =>
+          recipient.id === selectedRecipient.id
+            ? { ...recipient, walletBalance: result.new_balance / 100 }
+            : recipient,
+        ),
+      )
+
+      toast({
+        title: "Deposit Successful",
+        description: `$${amount} has been deposited to ${selectedRecipient.name}'s wallet.`,
+      })
+
+      setDepositAmount("")
+      setIsDepositDialogOpen(false)
+      setSelectedRecipient(null)
+    } catch (err) {
+      toast({
+        title: "Deposit Failed",
+        description: err instanceof Error ? err.message : "Failed to deposit funds",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  const handleAddRecipient = () => {
-    if (!newRecipient.name.trim() || !newRecipient.location.trim()) {
+  const handleAddRecipient = async () => {
+    if (!newRecipient.name.trim() || !newRecipient.location.trim() || !user) {
       toast({
         title: "Missing Information",
         description: "Please fill in all required fields.",
@@ -147,25 +156,41 @@ export function AidRecipients() {
       return
     }
 
-    const recipient: Recipient = {
-      id: (recipients.length + 1).toString(),
-      name: newRecipient.name.trim(),
-      location: newRecipient.location.trim(),
-      category: newRecipient.category,
-      registrationDate: new Date().toISOString().split("T")[0],
-      walletBalance: 0,
-      status: "pending",
+    try {
+      setIsSubmitting(true)
+
+      const recipientData: RecipientCreate = {
+        name: newRecipient.name.trim(),
+        location: newRecipient.location.trim(),
+        category: newRecipient.category,
+        phone: newRecipient.phone.trim() || undefined,
+        email: newRecipient.email.trim() || undefined,
+        program_id: user.default_program_id,
+      }
+
+      const result = await apiClient.createRecipient(recipientData)
+
+      // Refresh the recipients list
+      const response = await apiClient.getRecipients()
+      const transformedRecipients = response.recipients.map(transformRecipient)
+      setRecipients(transformedRecipients)
+
+      toast({
+        title: "Recipient Added",
+        description: `${recipientData.name} has been successfully registered for aid.`,
+      })
+
+      setNewRecipient({ name: "", location: "", category: "Family Aid", phone: "", email: "" })
+      setIsAddDialogOpen(false)
+    } catch (err) {
+      toast({
+        title: "Failed to Add Recipient",
+        description: err instanceof Error ? err.message : "Failed to register recipient",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
     }
-
-    setRecipients((prev) => [...prev, recipient])
-
-    toast({
-      title: "Recipient Added",
-      description: `${recipient.name} has been successfully registered for aid.`,
-    })
-
-    setNewRecipient({ name: "", location: "", category: "Family Aid" })
-    setIsAddDialogOpen(false)
   }
 
   const getStatusColor = (status: string) => {
@@ -179,6 +204,58 @@ export function AidRecipients() {
       default:
         return "bg-gray-100 text-gray-800 border-gray-200"
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-3xl font-bold text-foreground">Aid Recipients</h2>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Loading recipients...</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <Card key={i} className="bg-card border-border">
+              <CardContent className="p-6">
+                <div className="animate-pulse">
+                  <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
+                  <div className="h-3 bg-muted rounded w-1/2 mb-4"></div>
+                  <div className="h-6 bg-muted rounded w-1/3"></div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-3xl font-bold text-foreground">Aid Recipients</h2>
+          <div className="flex items-center gap-2 text-sm text-red-600">
+            <AlertCircle className="w-4 h-4" />
+            <span>Error loading recipients</span>
+          </div>
+        </div>
+        <Card className="bg-card border-border">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="w-5 h-5" />
+              <div>
+                <p className="font-medium">Failed to load recipients</p>
+                <p className="text-sm text-muted-foreground">{error}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -225,6 +302,31 @@ export function AidRecipients() {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="phone" className="text-right text-foreground">
+                  Phone
+                </Label>
+                <Input
+                  id="phone"
+                  placeholder="+1 234 567 8900"
+                  value={newRecipient.phone}
+                  onChange={(e) => setNewRecipient((prev) => ({ ...prev, phone: e.target.value }))}
+                  className="col-span-3 bg-input border-border"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="email" className="text-right text-foreground">
+                  Email
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="recipient@example.com"
+                  value={newRecipient.email}
+                  onChange={(e) => setNewRecipient((prev) => ({ ...prev, email: e.target.value }))}
+                  className="col-span-3 bg-input border-border"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="category" className="text-right text-foreground">
                   Category
                 </Label>
@@ -247,8 +349,9 @@ export function AidRecipients() {
                 variant="outline"
                 onClick={() => {
                   setIsAddDialogOpen(false)
-                  setNewRecipient({ name: "", location: "", category: "Family Aid" })
+                  setNewRecipient({ name: "", location: "", category: "Family Aid", phone: "", email: "" })
                 }}
+                disabled={isSubmitting}
                 className="border-border text-foreground hover:bg-muted"
               >
                 Cancel
@@ -256,9 +359,11 @@ export function AidRecipients() {
               <Button
                 type="button"
                 onClick={handleAddRecipient}
+                disabled={isSubmitting}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                Add Recipient
+                {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {isSubmitting ? "Adding..." : "Add Recipient"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -374,9 +479,11 @@ export function AidRecipients() {
                     <Button
                       type="button"
                       onClick={handleDeposit}
+                      disabled={isSubmitting}
                       className="bg-primary text-primary-foreground hover:bg-primary/90"
                     >
-                      Confirm Deposit
+                      {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                      {isSubmitting ? "Processing..." : "Confirm Deposit"}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
