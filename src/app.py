@@ -174,7 +174,7 @@ app.add_middleware(
 # ------------------------------
 # Models
 # ------------------------------
-AccountType = Literal["NGO", "RECIPIENT", "STORE"]
+AccountType = Literal["NGO", "RECIPIENT"]
 
 class AccountCreate(BaseModel):
     account_type: AccountType
