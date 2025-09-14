@@ -274,6 +274,7 @@ def build_messages(org_name: str, payload: Dict[str, Any]) -> List[Dict[str, str
         "You are a nonprofit analyst. Using **only** the structured API data provided, "
         "write a concise, factual profile of the organization for a general audience. "
         "Do not invent facts. If important fields are missing, say so."
+        "If facts are missing, leave them out entirely (do not say 'unknown')."
     )
     user = {
         "organization": org_name,
