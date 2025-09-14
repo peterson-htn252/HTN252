@@ -176,11 +176,16 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
             if not ngo_public_key or not ngo_private_key or not recipient_public_key:
                 raise HTTPException(status_code=500, detail="Wallet keys not properly configured")
             
-            # Derive addresses from public keys
-            from core.xrpl import derive_address_from_public_key, fetch_xrp_balance_drops, convert_drops_to_usd, transfer_between_wallets
-            
-            ngo_address = derive_address_from_public_key(ngo_public_key)
-            recipient_address = derive_address_from_public_key(recipient_public_key)
+            # Use stored addresses or derive from public keys
+            from core.xrpl import (
+                derive_address_from_public_key,
+                fetch_xrp_balance_drops,
+                convert_drops_to_usd,
+                transfer_between_wallets,
+            )
+
+            ngo_address = account.get("address") or derive_address_from_public_key(ngo_public_key)
+            recipient_address = recipient.get("address") or derive_address_from_public_key(recipient_public_key)
             
             if not ngo_address or not recipient_address:
                 raise HTTPException(status_code=500, detail="Could not derive wallet addresses")
