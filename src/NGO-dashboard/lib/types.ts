@@ -25,13 +25,11 @@ export interface Recipient {
 
 export interface DashboardStats {
   active_recipients: number;
-  total_donations_30d: number;
-  total_expenses_30d: number;
-  total_ngo_expenses: number;
-  available_funds: number;
+  total_expenses: number; // From auditor table (minor units)
+  available_funds: number; // From wallet balance (minor units)
+  lifetime_donations: number; // Total raised ever (minor units - cents)
+  goal: number; // Target amount (major units - dollars)
   utilization_rate: number;
-  lifetime_donations: number; // In minor units (cents)
-  goal: number; // In major units (dollars)
   last_updated: string;
 }
 

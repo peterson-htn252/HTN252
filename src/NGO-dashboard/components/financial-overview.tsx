@@ -111,9 +111,7 @@ export function FinancialOverview() {
 
   // Convert minor units (cents) to dollars for display
   const totalAvailable = stats.available_funds / 100
-  const totalDonations = stats.total_donations_30d / 100
-  const totalExpenses = stats.total_expenses_30d / 100
-  const totalNgoExpenses = stats.total_ngo_expenses / 100
+  const totalExpenses = stats.total_expenses / 100
   const utilizationRate = stats.utilization_rate
   
   // Fund utilization data (total raised vs goal)
@@ -153,9 +151,9 @@ export function FinancialOverview() {
             <TrendingDown className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">${totalNgoExpenses.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-foreground">${totalExpenses.toLocaleString()}</div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-              <span>Lifetime total</span>
+              <span>From auditor records</span>
             </div>
           </CardContent>
         </Card>
