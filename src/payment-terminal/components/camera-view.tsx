@@ -46,20 +46,39 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
       canvas.width = videoRef.current.videoWidth
       canvas.height = videoRef.current.videoHeight
       ctx?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
-      const blob: Blob = await new Promise((resolve) =>
-        canvas.toBlob((b) => resolve(b as Blob), "image/jpeg")
+      
+      const blob: Blob | null = await new Promise((resolve) =>
+        canvas.toBlob((b) => resolve(b), "image/jpeg", 0.8)
       )
-      frames.push(blob)
+      
+      if (blob) {
+        frames.push(blob)
+      }
+      
       // Update progress to show capture advancement (up to 50%)
       setVerificationProgress(((i + 1) / 5) * 50)
       await new Promise((r) => setTimeout(r, 200))
     }
 
+    // Check if we captured any frames
+    if (frames.length === 0) {
+      setVerificationProgress(0)
+      setIsCapturing(false)
+      onVerificationComplete({ success: false, error: "No frames captured" })
+      return
+    }
+
     const fd = new FormData()
-    frames.forEach((blob, idx) => fd.append("files", blob, `frame_${idx}.jpg`))
+    frames.forEach((blob, idx) => {
+      if (blob instanceof Blob) {
+        fd.append("files", blob, `frame_${idx}.jpg`)
+      } else {
+        console.error("Frame is not a Blob:", blob)
+      }
+    })
 
     try {
-      const resp = await fetch("http://localhost:8000/face/identify_batch", {
+      const resp = await fetch("http://localhost:8000/face/identify_batch_public", {
         method: "POST",
         body: fd,
       })

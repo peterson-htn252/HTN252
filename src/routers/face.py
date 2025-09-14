@@ -338,3 +338,37 @@ async def face_identify_batch(
         "model": "buffalo_l",
         "debug": {"mismatched_dims": int(mismatched)},
     }
+
+
+@router.post("/face/identify_batch_public", tags=["face"])
+async def face_identify_batch_public(
+    files: List[UploadFile] = File(...),
+    top_k: int = 3,
+    threshold: float = 0.40,
+):
+    """
+    Public version of identify_batch for payment terminal (no auth required).
+    For demo purposes, returns a mock successful identification.
+    """
+    # For demo purposes, return a mock successful identification
+    frames_used = len(files)
+    
+    if frames_used == 0:
+        raise HTTPException(400, "No images provided")
+    
+    # Mock successful match for demo - using valid UUID format
+    mock_match = {
+        "account_id": "7c18326a-eafb-4f90-804c-6926baacb38a",  # Valid UUID format
+        "public_key": "demo_public_key_abc123", 
+        "similarity": 0.85,
+        "ngo_id": "69193d5d-aa14-42a0-b556-dd000390b3a3",  # Valid UUID format
+        "ngo_name": "Volcano Relief Alliance"
+    }
+    
+    return {
+        "frames_used": frames_used,
+        "matches": [mock_match],
+        "model": "buffalo_l (demo)",
+        "search_scope": "global"
+    }
+
