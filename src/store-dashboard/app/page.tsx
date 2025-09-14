@@ -19,6 +19,9 @@ const products = [
   { id: "008", name: "Orange Juice", price: 4.49, category: "Beverages" },
 ]
 
+const PAYMENT_TERMINAL_URL = process.env.NEXT_PUBLIC_PAYMENT_TERMINAL_URL || "http://localhost:3001"
+const VENDOR_NAME = "Store Checkout"
+
 interface CartItem {
   id: string
   name: string
@@ -84,6 +87,25 @@ export default function POSCheckout() {
   }
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+
+  const handleCompleteSale = async () => {
+    try {
+      await fetch(`${PAYMENT_TERMINAL_URL}/api/checkout/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vendorName: VENDOR_NAME,
+          items: cart,
+          total,
+        }),
+      })
+
+      window.open(PAYMENT_TERMINAL_URL, "_blank")
+      clearCart()
+    } catch (error) {
+      console.error("Failed to send transaction to payment terminal", error)
+    }
+  }
 
 
   const filteredProducts = products.filter(
@@ -199,7 +221,12 @@ export default function POSCheckout() {
               </div>
             </div>
 
-            <Button className="w-full text-lg py-6" size="lg" disabled={cart.length === 0}>
+            <Button
+              className="w-full text-lg py-6"
+              size="lg"
+              disabled={cart.length === 0}
+              onClick={handleCompleteSale}
+            >
               <DollarSign className="h-5 w-5 mr-2" />
               Complete Sale
             </Button>
