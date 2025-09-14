@@ -40,7 +40,7 @@ export function PaymentTerminal() {
   const [transactionData, setTransactionData] = useState<TransactionData | null>(null)
   const [vendorName, setVendorName] = useState("Block Terminal")
   const [walletInfo, setWalletInfo] = useState<{
-    accountId: string
+    recipientId: string
     publicKey: string
     balanceUsd?: number
     recipientBalance?: number
@@ -93,7 +93,7 @@ export function PaymentTerminal() {
   }
 
   const handleVerificationResult = async (result: VerificationResult) => {
-    if (result.success && result.publicKey && result.accountId) {
+    if (result.success && result.publicKey && result.recipientId) {
       setPaymentError(null)
       try {
         // Get wallet balance
@@ -105,7 +105,7 @@ export function PaymentTerminal() {
         const walletData = await walletRes.json().catch(() => ({}))
 
         // Get recipient details and balance
-        const recipientRes = await fetch(`http://localhost:8000/recipients/${result.accountId}`, {
+        const recipientRes = await fetch(`http://localhost:8000/recipients/${result.recipientId}`, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
         })
@@ -125,7 +125,7 @@ export function PaymentTerminal() {
         }
 
         setWalletInfo({
-          accountId: result.accountId,
+          recipientId: result.recipientId,
           publicKey: result.publicKey,
           balanceUsd: walletData.balance_usd,
           recipientBalance: recipientBalance,
@@ -156,7 +156,7 @@ export function PaymentTerminal() {
         body: JSON.stringify({
           voucher_id: transactionData.transactionId || `voucher_${Date.now()}`,
           store_id: transactionData.storeId || "store_001",
-          recipient_id: walletInfo.accountId,
+          recipient_id: walletInfo.recipientId,
           program_id: transactionData.programId || "general_aid",
           amount_minor: Math.round(transactionData.total * 100), // Convert to minor units (cents)
           currency: "USD"
