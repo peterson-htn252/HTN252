@@ -29,6 +29,8 @@ def create_account(body: AccountCreate):
         wallet_keys = create_new_wallet()
         public_key = wallet_keys["public_key"]
         private_key = wallet_keys["private_key"]
+        # Derive the address from the public key
+        address = derive_address_from_public_key(public_key)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {str(e)}")
     TBL_ACCOUNTS.put_item(Item={
@@ -44,6 +46,7 @@ def create_account(body: AccountCreate):
         "lifetime_donations": 0,
         "public_key": public_key,
         "private_key": private_key,
+        "address": address,
         "created_at": now_iso(),
     })
     
@@ -316,6 +319,8 @@ def create_recipient(body: RecipientCreate, current_user: dict = Depends(verify_
             wallet_keys = create_new_wallet()
             public_key = wallet_keys["public_key"]
             private_key = wallet_keys["private_key"]
+            # Derive the address from the public key
+            address = derive_address_from_public_key(public_key)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {str(e)}")
         
@@ -327,6 +332,7 @@ def create_recipient(body: RecipientCreate, current_user: dict = Depends(verify_
             "balance": 0.0,
             "public_key": public_key,
             "private_key": private_key,
+            "address": address,
             "created_at": now_iso(),
         })
         
