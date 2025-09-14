@@ -152,16 +152,19 @@ def get_current_account(current_user: dict = Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/accounts/ngos", tags=["accounts"], response_model=List[NGOAccountSummary])
+@router.get("/accounts/ngos", tags=["accounts"])
 def get_all_ngo_accounts():
     """
     Get all NGO accounts with their name, description, goal, and XRPL address.
     """
-    try:
-        response = TBL_ACCOUNTS.scan(
+    response = TBL_ACCOUNTS.scan(
             FilterExpression="account_type = :account_type",
             ExpressionAttributeValues={":account_type": "NGO"}
         )
+
+    return response
+    try:
+        
 
         ngo_accounts: List[NGOAccountSummary] = []
         for item in response.get("Items", []):

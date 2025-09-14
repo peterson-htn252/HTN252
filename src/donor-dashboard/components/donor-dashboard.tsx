@@ -41,22 +41,20 @@ export function DonorDashboard() {
   useEffect(() => {
     async function loadImpactData() {
       try {
-        const ngos = await fetchNGOs()
-        const calculatedImpactData = calculateImpactData(ngos)
-        setImpactData(calculatedImpactData)
-      } catch (error) {
-        console.error("[v0] Error loading impact data:", error)
+        const ngos = await fetchNGOs();           // ← now always an array
+        setImpactData(calculateImpactData(ngos)); // ← safe reduce
+      } catch (e) {
+        console.error("[v0] Error loading impact data:", e);
         setImpactData({
           totalDonated: 146000,
           peopleHelped: 555,
           programsSupported: 3,
           transparencyScore: 98,
-        })
+        });
       }
     }
-
-    loadImpactData()
-  }, [])
+    loadImpactData();
+  }, []);
 
   const handleDonationComplete = (donationId: string, blockchainId: string) => {
     console.log("Donation completed:", { donationId, blockchainId })

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CreditCard, Shield, CheckCircle, AlertCircle, Loader2, Wallet } from "lucide-react"
+import { fetchNGOs } from "@/lib/api";
 
 // Stripe UI wrapper you already added
 import { StripePay } from "@/components/StripePay"
@@ -49,24 +50,33 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
   } | null>(null)
 
   // Load programs
-  useEffect(() => {
-    const fetchPrograms = async () => {
-      try {
-        const response = await fetch("http://127.0.0.1:8000/accounts/ngos")
-        if (response.ok) {
-          const data = await response.json()
-          setPrograms(data.filter((ngo: NGOProgram) => ngo.status === "active"))
-        } else {
-          console.error("Failed to fetch NGO programs")
-        }
-      } catch (error) {
-        console.error("Error fetching NGO programs:", error)
-      } finally {
-        setIsLoadingPrograms(false)
-      }
+useEffect(() => {
+  const fetchPrograms = async () => {
+    try {
+      const ngos = await fetchNGOs();
+
+      const progs: NGOProgram[] = ngos.map((n: any) => ({
+        account_id: n.account_id,
+        name: n.name,
+        description: n.description,
+        goal: Number(n.goal ?? 0),
+        status: String(n.status ?? "inactive"),
+        lifetime_donations: Number(n.lifetime_donations ?? 0),
+        created_at: n.created_at,
+        xrpl_address: n.address ?? n.xrpl_address ?? "",   // 👈 map it here
+      }));
+
+      setPrograms(progs.filter((p) => p.status.toLowerCase() === "active"));
+    } catch (e) {
+      console.error("Failed to load programs:", e);
+    } finally {
+      setIsLoadingPrograms(false);
     }
-    fetchPrograms()
-  }, [])
+  };
+  fetchPrograms();
+}, []);
+
+
 
   const selectedProgramData = programs.find((p) => p.account_id === selectedProgram)
 
@@ -331,13 +341,13 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
               <>
 
                 <StripePay
-                  amountCents={Math.round(Number.parseFloat(donationAmount || "0") * 100)}
-                  currency="usd"
-                  programId={selectedProgram}
-                  email={email}
-                  ngoPublicKey={selectedProgramData?.xrpl_address ?? ""}
-                  onConfirmed={handleStripeConfirmed}
-                />
+                amountCents={Math.round(Number.parseFloat(donationAmount || "0") * 100)}
+                currency="usd"
+                programId={selectedProgram}
+                email={email}
+                ngoPublicKey={selectedProgramData?.xrpl_address ?? ""}  // uses mapped value
+                onConfirmed={handleStripeConfirmed}
+              />
               </>
             ) : (
               <Alert>
