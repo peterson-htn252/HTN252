@@ -16,6 +16,25 @@ We provide a Ripple based donation and voucher distribution platform where
 - Stores are paid out in local currency through an off ramp partner
 - Every transaction is public and auditable on XRPL
 
+**NGO Dashboard**
+![NGO Dashboard](/img/image.png)
+
+**Donor Dashboard - Find Donation Programs**
+![Donor Dashboard](/img/rrss1.png)
+
+**Donor Dashboard - Track Your Donation**
+![Donor Dashboard](/img/rrss3.png)
+
+**Donor Dashboard - Stripe Payment**
+![Donor Dashboard](/img/rrss5.png)
+
+**Donor Dashboard - Successfu Payment**
+![Donor Dashboard](/img/rrss7.png)
+
+**Merchant Dashboard**
+![Biometric Face Scan](/img/image-8.png)
+
+
 ## System Architecture
 
 Core Flows
