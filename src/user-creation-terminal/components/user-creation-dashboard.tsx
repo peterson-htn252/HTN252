@@ -30,7 +30,19 @@ export function UserCreationDashboard() {
     return ((stepIndex + 1) / steps.length) * 100
   }
 
-  const handleFaceScanComplete = (faceData: any) => {
+  const handleFaceScanComplete = async (faceData: any) => {
+    const fd = new FormData()
+    for (const f of faceData.files) fd.append("files", f)
+    const res = await fetch("http://localhost:8000/face/enroll", {
+      method: "POST",
+      body: fd,
+    })
+    const data = await res.json()
+    console.log("Face enroll response:", data)
+    if (data.status !== "success") {
+      alert("Face enrollment failed. Please try again.")
+      return
+    }
     setFaceScanComplete(true)
     setCurrentStep("id-upload")
   }
@@ -43,6 +55,7 @@ export function UserCreationDashboard() {
 
   const handleReviewComplete = () => {
     setCurrentStep("complete")
+    // TODO: Create user account with extractedData and faceData
   }
 
   return (
