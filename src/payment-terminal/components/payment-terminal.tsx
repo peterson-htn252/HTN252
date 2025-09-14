@@ -23,6 +23,8 @@ export interface TransactionData {
   items: CheckoutItem[]
   total: number
   transactionId?: string
+  storeId?: string
+  programId?: string
 }
 
 type TerminalStep =
@@ -38,10 +40,12 @@ export function PaymentTerminal() {
   const [transactionData, setTransactionData] = useState<TransactionData | null>(null)
   const [vendorName, setVendorName] = useState("Block Terminal")
   const [walletInfo, setWalletInfo] = useState<{
-    accountId: string
+    recipientId: string
     publicKey: string
     balanceUsd?: number
+    recipientBalance?: number
   } | null>(null)
+  const [paymentError, setPaymentError] = useState<string | null>(null)
 
   useEffect(() => {
     const checkForTransaction = async () => {
@@ -60,7 +64,7 @@ export function PaymentTerminal() {
       }
     }
 
-    const interval = currentStep === "idle" ? setInterval(checkForTransaction, 2000) : null
+    const interval = currentStep === "idle" ? setInterval(checkForTransaction, 500) : null
 
     return () => {
       if (interval) clearInterval(interval)
@@ -70,7 +74,7 @@ export function PaymentTerminal() {
   const handlePaymentComplete = () => {
     setCurrentStep("accepted")
 
-    const audio = new Audio("/payment-success.mp3")
+    const audio = new Audio("/Happy.m4a")
     audio.play().catch(() => {
       console.log("[v0] Payment sound played")
     })
@@ -79,38 +83,90 @@ export function PaymentTerminal() {
       setCurrentStep("idle")
       setTransactionData(null)
       setWalletInfo(null)
+      setPaymentError(null)
     }, 3000)
   }
 
   const handleCheckout = () => {
     setCurrentStep("verification")
+    setPaymentError(null)
   }
 
   const handleVerificationResult = async (result: VerificationResult) => {
-    if (result.success && result.publicKey && result.accountId) {
+    if (result.success && result.publicKey && result.recipientId) {
+      setPaymentError(null)
       try {
-        const res = await fetch("http://localhost:8000/wallets/balance-usd", {
+        // Get XRPL wallet balance (this is what we use for payment)
+        const walletRes = await fetch("http://localhost:8000/wallets/balance-usd", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ public_key: result.publicKey }),
         })
-        const data = await res.json().catch(() => ({}))
+        const walletData = await walletRes.json().catch(() => ({}))
+        const walletBalance = walletData.balance_usd || 0
+
+        // Check if recipient has sufficient XRPL wallet balance
+        const transactionAmount = transactionData?.total || 0
+        if (walletBalance < transactionAmount) {
+          setPaymentError(`Insufficient wallet balance. Available: $${walletBalance.toFixed(2)}, Required: $${transactionAmount.toFixed(2)}`)
+          setCurrentStep("checkout")
+          return
+        }
+
         setWalletInfo({
-          accountId: result.accountId,
+          recipientId: result.recipientId,
           publicKey: result.publicKey,
-          balanceUsd: data.balance_usd,
+          balanceUsd: walletBalance,
+          recipientBalance: walletBalance,  // Same as wallet balance since that's what matters
         })
-      } catch {
-        setWalletInfo({ accountId: result.accountId, publicKey: result.publicKey })
+        setCurrentStep("wallet")
+      } catch (error) {
+        console.error("Error fetching wallet/recipient data:", error)
+        setPaymentError("Failed to verify account details. Please try again.")
+        setCurrentStep("checkout")
       }
-      setCurrentStep("wallet")
     } else {
+      setPaymentError("Face verification failed. Please try again.")
       setCurrentStep("checkout")
     }
   }
 
-  const handleWalletConfirm = () => {
+  const handleWalletConfirm = async () => {
+    if (!transactionData || !walletInfo) return
+    
     setCurrentStep("processing")
+    setPaymentError(null)
+
+    try {
+      // Call the /redeem endpoint to process the actual payment
+      const redeemRes = await fetch("http://localhost:8000/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          voucher_id: transactionData.transactionId || `voucher_${Date.now()}`,
+          store_id: transactionData.storeId || "store_001",
+          recipient_id: walletInfo.recipientId,
+          program_id: transactionData.programId || "general_aid",
+          amount_minor: Math.round(transactionData.total * 100), // Convert to minor units (cents)
+          currency: "USD"
+        }),
+      })
+
+      if (!redeemRes.ok) {
+        const errorData = await redeemRes.json().catch(() => ({}))
+        throw new Error(errorData.detail || `Payment failed: ${redeemRes.status}`)
+      }
+
+      const redeemData = await redeemRes.json()
+      console.log("Payment processed successfully:", redeemData)
+      
+      // Payment successful
+      handlePaymentComplete()
+    } catch (error) {
+      console.error("Payment processing failed:", error)
+      setPaymentError(error instanceof Error ? error.message : "Payment processing failed. Please try again.")
+      setCurrentStep("wallet")
+    }
   }
 
   if (currentStep === "idle") {
@@ -155,19 +211,34 @@ export function PaymentTerminal() {
                 <CardTitle className="flex items-center gap-2">Customer Verification</CardTitle>
               </CardHeader>
               <CardContent>
-                <CameraView currentStep={currentStep} onVerificationComplete={handleVerificationResult} />
+                <CameraView 
+                  currentStep={currentStep} 
+                  onVerificationComplete={handleVerificationResult} 
+                />
               </CardContent>
             </Card>
           </div>
         )}
 
         <div className={`space-y-6 ${currentStep === "verification" ? "" : "lg:col-span-3"}`}>
+          {paymentError && (
+            <Card className="border-red-200 bg-red-50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 text-red-800">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span className="font-medium">{paymentError}</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           {transactionData && <TransactionSummary transactionData={transactionData} currentStep={currentStep} />}
           {walletInfo && currentStep === "wallet" && <WalletDetails walletInfo={walletInfo} />}
 
           <PaymentActions
             currentStep={currentStep}
-            onStepChange={setCurrentStep}
+            onStepChange={(step: string) => setCurrentStep(step as TerminalStep)}
             onCheckout={handleCheckout}
             onPaymentComplete={handlePaymentComplete}
             onWalletConfirm={handleWalletConfirm}

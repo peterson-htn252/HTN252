@@ -176,11 +176,16 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
             if not ngo_public_key or not ngo_private_key or not recipient_public_key:
                 raise HTTPException(status_code=500, detail="Wallet keys not properly configured")
             
-            # Derive addresses from public keys
-            from core.xrpl import derive_address_from_public_key, fetch_xrp_balance_drops, convert_drops_to_usd, transfer_between_wallets
-            
-            ngo_address = derive_address_from_public_key(ngo_public_key)
-            recipient_address = derive_address_from_public_key(recipient_public_key)
+            # Use stored addresses or derive from public keys
+            from core.xrpl import (
+                derive_address_from_public_key,
+                fetch_xrp_balance_drops,
+                convert_drops_to_usd,
+                transfer_between_wallets,
+            )
+
+            ngo_address = account.get("address") or derive_address_from_public_key(ngo_public_key)
+            recipient_address = recipient.get("address") or derive_address_from_public_key(recipient_public_key)
             
             if not ngo_address or not recipient_address:
                 raise HTTPException(status_code=500, detail="Could not derive wallet addresses")
@@ -209,6 +214,50 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
             
             new_balance = current_balance + body.amount
         else:
+            # Handle withdrawal - transfer money from recipient wallet back to NGO wallet
+            # Get NGO account details to access the wallet
+            from core.database import TBL_ACCOUNTS
+            account = TBL_ACCOUNTS.get_item(Key={"account_id": ngo_id}).get("Item")
+            if not account:
+                raise HTTPException(status_code=500, detail="NGO account not found")
+            
+            # Get wallet details
+            ngo_public_key = account.get("public_key")
+            ngo_private_key = account.get("private_key")
+            recipient_public_key = recipient.get("public_key")
+            
+            if not ngo_public_key or not ngo_private_key or not recipient_public_key:
+                raise HTTPException(status_code=500, detail="Wallet keys not properly configured")
+            
+            # Use stored addresses or derive from public keys
+            ngo_address = account.get("address") or derive_address_from_public_key(ngo_public_key)
+            recipient_address = recipient.get("address") or derive_address_from_public_key(recipient_public_key)
+            
+            if not ngo_address or not recipient_address:
+                raise HTTPException(status_code=500, detail="Could not derive wallet addresses")
+            
+            # Check recipient wallet balance
+            recipient_balance_drops = fetch_xrp_balance_drops(recipient_address)
+            if recipient_balance_drops is None:
+                raise HTTPException(status_code=400, detail="Recipient wallet is not funded or could not fetch balance")
+            
+            recipient_balance_usd = convert_drops_to_usd(recipient_balance_drops)
+            if recipient_balance_usd < body.amount:
+                raise HTTPException(status_code=400, detail=f"Insufficient recipient wallet balance. Available: ${recipient_balance_usd:.2f}")
+            
+            # Perform wallet-to-wallet transfer from recipient to NGO
+            memo = body.description or f"Withdrawal from {recipient['name']}"
+            tx_hash = transfer_between_wallets(
+                sender_seed=recipient.get("private_key"),
+                sender_address=recipient_address,
+                recipient_address=ngo_address,
+                amount_usd=body.amount,
+                memo=memo
+            )
+            
+            if not tx_hash:
+                raise HTTPException(status_code=500, detail="Wallet transfer failed")
+            
             new_balance = current_balance - body.amount
         
         # Update the balance field in the recipients table
@@ -241,6 +290,34 @@ def get_recipient_balance(recipient_id: str):
         return {
             "recipient_id": recipient_id,
             "balance": recipient.get("balance", 0.0)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@router.get("/recipients/{recipient_id}", tags=["recipients"])
+def get_recipient_public(recipient_id: str):
+    """Get recipient details for payment terminal (no auth required)"""
+    try:
+        # Handle demo recipient cases
+        if recipient_id in ["550e8400-e29b-41d4-a716-446655440000", "7c18326a-eafb-4f90-804c-6926baacb38a"]:
+            return {
+                "recipient_id": recipient_id,
+                "name": "Demo Recipient",
+                "balance": 100.0,  # Demo balance
+                "verified": True,
+                "created_at": "2024-01-01T00:00:00Z",
+            }
+        
+        recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
+        if not recipient:
+            raise HTTPException(status_code=404, detail="Recipient not found")
+        return {
+            "recipient_id": recipient_id,
+            "name": recipient.get("name"),
+            "balance": recipient.get("balance", 0.0),
+            "verified": recipient.get("verified", False),
+            "created_at": recipient.get("created_at"),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")

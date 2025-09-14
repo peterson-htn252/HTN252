@@ -1,6 +1,12 @@
+// components/DonationForm.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import remarkBreaks from "remark-breaks"
+import rehypeSanitize from "rehype-sanitize"
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,6 +14,8 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CreditCard, Shield, CheckCircle, AlertCircle, Loader2, Wallet } from "lucide-react"
+import { fetchNGOs } from "@/lib/api"
+import { StripePay } from "@/components/StripePay"
 
 interface DonationFormProps {
   onDonationComplete?: (donationId: string, blockchainId: string) => void
@@ -19,10 +27,53 @@ interface NGOProgram {
   account_id: string
   name: string
   description: string
-  goal: string
+  goal: number
   status: string
   lifetime_donations: number
   created_at: string
+  xrpl_address?: string
+  summary?: string
+}
+
+/** Small helper to stream plaintext responses */
+async function streamText(
+  url: string,
+  init: RequestInit,
+  onChunk: (text: string) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const res = await fetch(url, { ...init, signal })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.body) throw new Error("No response body to stream")
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    onChunk(decoder.decode(value, { stream: true }))
+  }
+}
+
+/** Inline Markdown viewer with safe defaults */
+function MarkdownViewer({ text }: { text: string }) {
+  return (
+    <div className="prose prose-sm dark:prose-invert max-w-none">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkBreaks]}
+        rehypePlugins={[rehypeSanitize]}
+        components={{
+          a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+          img: () => null, // avoid images in summaries
+          h1: ({ node, ...p }) => <h2 {...p} />, // downsize headings inside cards
+          h2: ({ node, ...p }) => <h3 {...p} />,
+        }}
+      >
+        {text || ""}
+      </ReactMarkdown>
+    </div>
+  )
 }
 
 export function DonationForm({ onDonationComplete }: DonationFormProps) {
@@ -34,6 +85,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [programs, setPrograms] = useState<NGOProgram[]>([])
   const [isLoadingPrograms, setIsLoadingPrograms] = useState(true)
+
   const [donationResult, setDonationResult] = useState<{
     donationId: string
     blockchainId: string
@@ -42,24 +94,105 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     paymentMethod: string
   } | null>(null)
 
+  // Load programs, then stream EIN+summary per card
   useEffect(() => {
-    const fetchPrograms = async () => {
+    let cancelled = false
+    const controller = new AbortController()
+
+    const run = async () => {
       try {
-        const response = await fetch("http://127.0.0.1:8000/accounts/ngos")
-        if (response.ok) {
-          const data = await response.json()
-          setPrograms(data.filter((ngo: NGOProgram) => ngo.status === "active"))
-        } else {
-          console.error("Failed to fetch NGO programs")
+        const ngos = await fetchNGOs()
+
+        // 1) Set base cards immediately (fast UI)
+        const base: NGOProgram[] = ngos.map((n: any) => ({
+          account_id: n.account_id,
+          name: n.name,
+          description: n.description,
+          goal: Number(n.goal ?? 0),
+          status: String(n.status ?? "inactive"),
+          lifetime_donations: Number(n.lifetime_donations ?? 0),
+          created_at: n.created_at,
+          xrpl_address: n.address ?? n.xrpl_address ?? "",
+          summary: "",
+        }))
+        setPrograms(base)
+
+        // 2) For each, fetch EIN (JSON) then stream summary (text)
+        for (const n of ngos) {
+          const programKey = n.account_id
+
+          // EIN lookup
+          let ein: string | undefined
+          try {
+            const r0 = await fetch("http://localhost:8000/npo/ein", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ organization: n.name }),
+              signal: controller.signal,
+            })
+            if (r0.ok) {
+              const d0: any = await r0.json()
+              ein = d0?.results?.[0]?.ein || undefined
+            }
+          } catch {
+            // ignore EIN failure; we can still summarize from Wikipedia/Wikidata
+          }
+
+          // Stream the summary; throttle UI updates to ~60fps
+          try {
+            let gotFirst = false
+            let buffer = ""
+            let raf: number | null = null
+            const flush = () => {
+              if (cancelled || !buffer) return
+              setPrograms((prev) =>
+                prev.map((p) =>
+                  p.account_id === programKey ? { ...p, summary: (p.summary || "") + buffer } : p
+                )
+              )
+              buffer = ""
+              raf = null
+            }
+
+            await streamText(
+              "http://localhost:8000/npo/summarize", // streams text by default
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ organization: n.name, ein }),
+              },
+              (chunk) => {
+                if (cancelled) return
+                if (!gotFirst) {
+                  // Strip leading "# Org" header if your backend yields it
+                  chunk = chunk.replace(/^# .*?\n+/, "")
+                  gotFirst = true
+                }
+                buffer += chunk
+                if (!raf) raf = requestAnimationFrame(flush)
+              },
+              controller.signal
+            )
+            if (buffer) flush()
+          } catch (err) {
+            console.error("Streaming summary failed:", err)
+          }
         }
-      } catch (error) {
-        console.error("Error fetching NGO programs:", error)
+
+        // Optional: filter after starting streams (or keep full list)
+        setPrograms((prev) => prev.filter((p) => p.status.toLowerCase() === "active"))
+      } catch (e) {
+        console.error("Failed to load programs:", e)
       } finally {
-        setIsLoadingPrograms(false)
+        if (!cancelled) setIsLoadingPrograms(false)
       }
     }
 
-    fetchPrograms()
+    run()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
   }, [])
 
   const selectedProgramData = programs.find((p) => p.account_id === selectedProgram)
@@ -75,79 +208,68 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     }
   }
 
-  const handlePaymentSubmit = async () => {
+  // ----- XRPL direct (non-Stripe) path -----
+  const handlePayXRPL = async () => {
     setIsProcessing(true)
     setStep("processing")
-
     try {
-      if (paymentMethod === "card") {
-        // Stripe payment processing
-        const response = await fetch("/api/payments/stripe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount: Number.parseFloat(donationAmount) * 100, // Convert to cents
-            currency: "usd",
-            programId: selectedProgram,
-            email,
-          }),
-        })
-
-        if (!response.ok) throw new Error("Payment failed")
-
-        const { paymentIntent, donationId } = await response.json()
-
-        // Record on XRPL for transparency
-        const xrplResponse = await fetch("/api/xrpl/record-donation", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            donationId,
-            amount: Number.parseFloat(donationAmount),
-            programId: selectedProgram,
-            stripePaymentId: paymentIntent.id,
-          }),
-        })
-
-        const { blockchainTxHash } = await xrplResponse.json()
-
-        setDonationResult({
-          donationId,
-          blockchainId: blockchainTxHash,
+      const res = await fetch("/api/payments/xrpl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           amount: Number.parseFloat(donationAmount),
-          program: selectedProgramData?.name || "",
-          paymentMethod: "Credit Card",
-        })
-      } else {
-        // Direct Ripple/XRPL payment
-        const response = await fetch("/api/payments/xrpl", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount: Number.parseFloat(donationAmount),
-            programId: selectedProgram,
-            email,
-          }),
-        })
+          programId: selectedProgram,
+          email,
+        }),
+      })
+      if (!res.ok) throw new Error("XRPL payment failed")
+      const { donationId, txHash } = await res.json()
 
-        if (!response.ok) throw new Error("XRPL payment failed")
-
-        const { donationId, txHash } = await response.json()
-
-        setDonationResult({
-          donationId,
-          blockchainId: txHash,
-          amount: Number.parseFloat(donationAmount),
-          program: selectedProgramData?.name || "",
-          paymentMethod: "Ripple (XRPL)",
-        })
-      }
-
+      setDonationResult({
+        donationId,
+        blockchainId: txHash,
+        amount: Number.parseFloat(donationAmount),
+        program: selectedProgramData?.name || "",
+        paymentMethod: "Ripple (XRPL)",
+      })
       setStep("complete")
-      onDonationComplete?.(donationResult?.donationId || "", donationResult?.blockchainId || "")
-    } catch (error) {
-      console.error("Payment error:", error)
-      // Handle error state - could add error step
+      onDonationComplete?.(donationId, txHash)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "XRPL payment failed")
+      setStep("payment")
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  // ----- After Stripe confirms card -----
+  const handleStripeConfirmed = async (paymentIntentId: string) => {
+    setIsProcessing(true)
+    setStep("processing")
+    try {
+      const r = await fetch("/api/payments/fulfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paymentIntentId,
+          overrideAddress: selectedProgramData?.xrpl_address || undefined,
+        }),
+      })
+      const data = await r.json()
+      if (!r.ok) throw new Error(data.error || "Fulfillment failed")
+
+      setDonationResult({
+        donationId: paymentIntentId,
+        blockchainId: data.txHash,
+        amount: Number.parseFloat(donationAmount),
+        program: selectedProgramData?.name || "",
+        paymentMethod: "Credit Card",
+      })
+      setStep("complete")
+      onDonationComplete?.(paymentIntentId, data.txHash)
+    } catch (err: any) {
+      console.error("Fulfill failed:", err)
+      alert(err?.message || "Sending XRP failed")
       setStep("payment")
     } finally {
       setIsProcessing(false)
@@ -163,14 +285,13 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     setDonationResult(null)
   }
 
+  // ----- UI -----
   if (step === "select") {
     return (
       <div className="space-y-6">
         <div className="text-center">
           <h3 className="text-2xl font-bold mb-2">Choose a Program to Support</h3>
-          <p className="text-muted-foreground">
-            Select an active NGO program where your donation will make an immediate impact
-          </p>
+          <p className="text-muted-foreground">Select an active NGO program where your donation will make an immediate impact</p>
         </div>
 
         {isLoadingPrograms ? (
@@ -192,6 +313,13 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
                     <Badge variant="default">{program.status}</Badge>
                   </div>
                   <CardDescription>{program.description}</CardDescription>
+
+                  {!!program.summary && (
+                    <div className="mt-2">
+                      <span className="text-sm font-medium text-muted-foreground">AI Summary:</span>
+                      <MarkdownViewer text={program.summary} />
+                    </div>
+                  )}
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
@@ -232,6 +360,16 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
           <CardDescription>Supporting: {selectedProgramData?.name}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {selectedProgramData?.description && (
+            <p className="text-sm text-muted-foreground">{selectedProgramData.description}</p>
+          )}
+          {!!selectedProgramData?.summary && (
+            <div>
+              <span className="text-sm font-medium text-muted-foreground">AI Summary:</span>
+              <MarkdownViewer text={selectedProgramData.summary} />
+            </div>
+          )}
+
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
               {[25, 50, 100].map((amount) => (
@@ -293,6 +431,16 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {selectedProgramData?.description && (
+            <p className="text-sm text-muted-foreground">{selectedProgramData.description}</p>
+          )}
+          {!!selectedProgramData?.summary && (
+            <div>
+              <span className="text-sm font-medium text-muted-foreground">AI Summary:</span>
+              <MarkdownViewer text={selectedProgramData.summary} />
+            </div>
+          )}
+
           <div className="space-y-4">
             <div className="space-y-3">
               <Label>Payment Method</Label>
@@ -330,32 +478,19 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
             </div>
 
             {paymentMethod === "card" ? (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="card">Card Number</Label>
-                  <div className="relative">
-                    <Input id="card" placeholder="1234 5678 9012 3456" className="pl-10" />
-                    <CreditCard className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="expiry">Expiry Date</Label>
-                    <Input id="expiry" placeholder="MM/YY" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cvc">CVC</Label>
-                    <Input id="cvc" placeholder="123" />
-                  </div>
-                </div>
-              </>
+              <StripePay
+                amountCents={Math.round(Number.parseFloat(donationAmount || "0") * 100)}
+                currency="usd"
+                programId={selectedProgram}
+                email={email}
+                ngoPublicKey={selectedProgramData?.xrpl_address ?? ""}
+                onConfirmed={handleStripeConfirmed}
+              />
             ) : (
               <Alert>
                 <Wallet className="h-4 w-4" />
                 <AlertDescription>
-                  <strong>Ripple Payment:</strong> You'll be redirected to complete the payment using your XRPL wallet.
-                  This creates a direct blockchain transaction for maximum transparency.
+                  <strong>Ripple Payment:</strong> You’ll be redirected to complete the payment using your XRPL wallet.
                 </AlertDescription>
               </Alert>
             )}
@@ -365,7 +500,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
             <Shield className="h-4 w-4" />
             <AlertDescription>
               {paymentMethod === "card"
-                ? "Your payment is secured with 256-bit SSL encryption and processed via Stripe. No registration required."
+                ? "Your payment is processed via Stripe. We never touch raw card numbers."
                 : "Your XRPL payment is secured by the Ripple blockchain. All transactions are publicly verifiable."}
             </AlertDescription>
           </Alert>
@@ -374,9 +509,16 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
             <Button variant="outline" onClick={() => setStep("amount")}>
               Back
             </Button>
-            <Button className="flex-1" onClick={handlePaymentSubmit} disabled={!email || isProcessing}>
-              {paymentMethod === "card" ? `Pay $${donationAmount} with Card` : `Pay $${donationAmount} with XRPL`}
-            </Button>
+
+            {paymentMethod === "ripple" && (
+              <Button
+                className="flex-1"
+                onClick={handlePayXRPL}
+                disabled={!email || isProcessing || !donationAmount}
+              >
+                {`Pay $${donationAmount} with XRPL`}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -393,15 +535,15 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
             <div className="space-y-2 text-muted-foreground">
               {paymentMethod === "card" ? (
                 <>
-                  <p>✓ Processing payment with Stripe...</p>
-                  <p>✓ Recording on XRPL blockchain...</p>
-                  <p>⏳ Generating tracking ID...</p>
+                  <p>✓ Payment confirmed with Stripe</p>
+                  <p>✓ Sending XRP to NGO wallet…</p>
+                  <p>⏳ Waiting for blockchain confirmation…</p>
                 </>
               ) : (
                 <>
-                  <p>✓ Connecting to XRPL network...</p>
-                  <p>✓ Broadcasting transaction...</p>
-                  <p>⏳ Confirming on blockchain...</p>
+                  <p>✓ Connecting to XRPL network…</p>
+                  <p>✓ Broadcasting transaction…</p>
+                  <p>⏳ Confirming on blockchain…</p>
                 </>
               )}
             </div>
@@ -459,8 +601,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              A confirmation email with your blockchain tracking ID has been sent to {email}. Use this ID to track how
-              your donation is distributed and used.
+              A confirmation email with your blockchain tracking ID has been sent to {email}.
             </AlertDescription>
           </Alert>
 

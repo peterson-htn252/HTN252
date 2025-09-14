@@ -38,12 +38,13 @@ export function CustomerIdleScreen({ vendorName }: CustomerIdleScreenProps) {
 
           {/* Waiting Message */}
           <div className="space-y-4">
-            <p className="text-lg text-muted-foreground">Ready for checkout</p>
-            <div className="flex justify-center">
-              <div className="animate-pulse flex space-x-2">
-                <div className="w-2 h-2 bg-primary rounded-full"></div>
-                <div className="w-2 h-2 bg-primary rounded-full animation-delay-200"></div>
-                <div className="w-2 h-2 bg-primary rounded-full animation-delay-400"></div>
+            <p className="text-lg text-muted-foreground">Waiting for transaction...</p>
+            <p className="text-sm text-muted-foreground">A store clerk will initiate your payment</p>
+            <div className="flex justify-center mt-6">
+              <div className="flex space-x-2">
+                <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+                <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
+                <div className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{animationDelay: '0.4s'}}></div>
               </div>
             </div>
           </div>

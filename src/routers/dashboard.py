@@ -33,13 +33,14 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
         available_funds = 0
         try:
             public_key = account.get("public_key")
-            if public_key:
+            addr = account.get("address")
+            if not addr and public_key:
                 addr = derive_address_from_public_key(public_key)
-                if addr:
-                    drops = fetch_xrp_balance_drops(addr)
-                    drops_val = 0 if drops is None else drops
-                    usd = convert_drops_to_usd(drops_val)
-                    available_funds = int(round(usd * 100))  # Convert to minor units (cents)
+            if addr:
+                drops = fetch_xrp_balance_drops(addr)
+                drops_val = 0 if drops is None else drops
+                usd = convert_drops_to_usd(drops_val)
+                available_funds = int(round(usd * 100))  # Convert to minor units (cents)
         except Exception:
             available_funds = 0
         

@@ -10,11 +10,11 @@ password_hash     TEXT                            NULL
 ngo_id            UUID (Foreign Key → ngos.ngo_id) NULL
 created_at        TIMESTAMPTZ (with time zone)    DEFAULT now()
 description       TEXT                            NULL
-goal              DOUBLE PRECISION (float8)       NULL
+goal              REAL (float4)                   NULL
 lifetime_donations REAL (float4)                  NULL
 public_key        TEXT                            NULL
 private_key       TEXT                            NULL
-address           TEXT                            NOT NULL
+address          TEXT                            NULL
 --------------------------------------------------------------
 
 Table: credentials
@@ -22,7 +22,7 @@ Columns:
 --------------------------------------------------------------
 credential_id     UUID (Primary Key)              NOT NULL
 issuer_did        TEXT                            NOT NULL
-subject_id        UUID                            NULL
+subject_id        TEXT                            NULL
 role              TEXT                            NULL
 claims            JSONB                           NULL
 jwt               TEXT                            NOT NULL

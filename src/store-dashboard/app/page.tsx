@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { ShoppingCart, Plus, Minus, Trash2, DollarSign } from "lucide-react"
+import { ShoppingCart, Plus, Minus, Trash2, DollarSign, History, Clock, CheckCircle, XCircle } from "lucide-react"
 
 const products = [
   { id: "001", name: "Apple", price: 1.5, category: "Produce" },
@@ -19,8 +19,10 @@ const products = [
   { id: "008", name: "Orange Juice", price: 4.49, category: "Beverages" },
 ]
 
-const PAYMENT_TERMINAL_URL = process.env.NEXT_PUBLIC_PAYMENT_TERMINAL_URL || "http://localhost:3001"
+const PAYMENT_TERMINAL_URL = process.env.NEXT_PUBLIC_PAYMENT_TERMINAL_URL || "http://localhost:3003"
 const VENDOR_NAME = "Store Checkout"
+const STORE_ID = process.env.NEXT_PUBLIC_STORE_ID || "store_001"
+const PROGRAM_ID = process.env.NEXT_PUBLIC_PROGRAM_ID || "general_aid"
 
 interface CartItem {
   id: string
@@ -29,11 +31,21 @@ interface CartItem {
   quantity: number
 }
 
+interface Transaction {
+  id: string
+  timestamp: string
+  items: CartItem[]
+  total: number
+  status: "pending" | "completed" | "failed"
+}
+
 export default function POSCheckout() {
   const [cart, setCart] = useState<CartItem[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [customPrice, setCustomPrice] = useState("")
   const [customItem, setCustomItem] = useState("")
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [showTransactions, setShowTransactions] = useState(false)
 
   const addItemById = (productId: string) => {
     const product = products.find((p) => p.id === productId)
@@ -89,21 +101,56 @@ export default function POSCheckout() {
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
 
   const handleCompleteSale = async () => {
+    const transactionId = `txn_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+    
+    // Add transaction to local state as pending
+    const newTransaction: Transaction = {
+      id: transactionId,
+      timestamp: new Date().toISOString(),
+      items: [...cart],
+      total,
+      status: "pending"
+    }
+    setTransactions(prev => [newTransaction, ...prev])
+
     try {
       await fetch(`${PAYMENT_TERMINAL_URL}/api/checkout/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          transactionId,
           vendorName: VENDOR_NAME,
           items: cart,
           total,
+          storeId: STORE_ID,
+          programId: PROGRAM_ID,
         }),
       })
 
       window.open(PAYMENT_TERMINAL_URL, "_blank")
       clearCart()
+      
+      // Simulate transaction completion after some time
+      setTimeout(() => {
+        setTransactions(prev => 
+          prev.map(t => 
+            t.id === transactionId 
+              ? { ...t, status: "completed" as const }
+              : t
+          )
+        )
+      }, 30000) // Mark as completed after 30 seconds
+
     } catch (error) {
       console.error("Failed to send transaction to payment terminal", error)
+      // Mark transaction as failed
+      setTransactions(prev => 
+        prev.map(t => 
+          t.id === transactionId 
+            ? { ...t, status: "failed" as const }
+            : t
+        )
+      )
     }
   }
 
@@ -112,15 +159,84 @@ export default function POSCheckout() {
     (product) => product.name.toLowerCase().includes(searchTerm.toLowerCase()) || product.id.includes(searchTerm),
   )
 
+  const getStatusIcon = (status: Transaction["status"]) => {
+    switch (status) {
+      case "pending":
+        return <Clock className="h-4 w-4 text-yellow-600" />
+      case "completed":
+        return <CheckCircle className="h-4 w-4 text-green-600" />
+      case "failed":
+        return <XCircle className="h-4 w-4 text-red-600" />
+    }
+  }
+
+  const getStatusColor = (status: Transaction["status"]) => {
+    switch (status) {
+      case "pending":
+        return "bg-yellow-100 text-yellow-800"
+      case "completed":
+        return "bg-green-100 text-green-800"
+      case "failed":
+        return "bg-red-100 text-red-800"
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b shadow-sm">
-        <div className="px-6 py-4">
+        <div className="px-6 py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-gray-900">Store Checkout System</h1>
+          <Button 
+            variant="outline" 
+            onClick={() => setShowTransactions(!showTransactions)}
+            className="flex items-center gap-2"
+          >
+            <History className="h-4 w-4" />
+            {showTransactions ? "Hide" : "Show"} Transactions ({transactions.length})
+          </Button>
         </div>
       </header>
 
       <div className="flex h-[calc(100vh-80px)]">
+        {showTransactions && (
+          <div className="w-96 bg-white border-r shadow-lg">
+            <div className="p-6 border-b">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Transaction History
+              </h2>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-full">
+              {transactions.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">No transactions yet</div>
+              ) : (
+                <div className="space-y-3">
+                  {transactions.map((transaction) => (
+                    <Card key={transaction.id} className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          {getStatusIcon(transaction.status)}
+                          <span className="text-sm font-medium">
+                            {new Date(transaction.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <Badge className={getStatusColor(transaction.status)}>
+                          {transaction.status}
+                        </Badge>
+                      </div>
+                      <div className="text-sm text-gray-600 mb-2">
+                        {transaction.items.length} items
+                      </div>
+                      <div className="text-lg font-bold">
+                        ${transaction.total.toFixed(2)}
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         <div className="flex-1 p-6 overflow-y-auto">
           <div className="mb-6">
             <Input
