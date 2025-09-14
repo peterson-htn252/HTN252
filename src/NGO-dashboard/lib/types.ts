@@ -63,6 +63,16 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  organization_name: string;
+  contact_name: string;
+  phone?: string;
+  address?: string;
+  description?: string;
+}
+
 export interface RecipientCreate {
   name: string;
   location: string;

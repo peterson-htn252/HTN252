@@ -1,13 +1,8 @@
 import { 
   AuthToken, 
   LoginRequest, 
-  NGO, 
-  Recipient, 
-  DashboardStats, 
-  ExpenseBreakdown, 
-  MonthlyTrends,
-  RecipientCreate,
-  BalanceOperation
+  RegisterRequest,
+  NGO
 } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -66,68 +61,77 @@ class APIClient {
 
   // Auth methods
   async login(credentials: LoginRequest): Promise<AuthToken> {
-    const token = await this.request<AuthToken>('/auth/login', {
+    const response = await this.request<{
+      access_token: string;
+      token_type: string;
+      account_id: string;
+      account_type: string;
+      name: string;
+      email: string;
+      ngo_id?: string;
+    }>('/accounts/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
+    
+    // Transform to match AuthToken interface
+    const token: AuthToken = {
+      access_token: response.access_token,
+      token_type: response.token_type,
+      ngo_id: response.account_id, // Use account_id as ngo_id for compatibility
+      organization_name: response.name
+    };
     
     this.setToken(token.access_token);
     return token;
   }
 
-  async getCurrentUser(): Promise<NGO> {
-    return this.request<NGO>('/auth/me');
-  }
-
-  // Dashboard methods
-  async getDashboardStats(): Promise<DashboardStats> {
-    return this.request<DashboardStats>('/ngo/dashboard/stats');
-  }
-
-  async getExpenseBreakdown(): Promise<ExpenseBreakdown> {
-    return this.request<ExpenseBreakdown>('/ngo/dashboard/expense-breakdown');
-  }
-
-  async getMonthlyTrends(): Promise<MonthlyTrends> {
-    return this.request<MonthlyTrends>('/ngo/dashboard/monthly-trends');
-  }
-
-  // Recipients methods
-  async getRecipients(search?: string): Promise<{ recipients: Recipient[]; count: number }> {
-    const params = new URLSearchParams();
-    if (search) {
-      params.append('search', search);
-    }
+  async register(registrationData: RegisterRequest): Promise<{ account_id: string }> {
+    const accountData = {
+      account_type: "NGO" as const,
+      status: "active" as const,
+      name: registrationData.organization_name,
+      email: registrationData.email,
+      password: registrationData.password,
+      ngo_id: null // Will be set by server
+    };
     
-    const endpoint = `/ngo/recipients${params.toString() ? `?${params.toString()}` : ''}`;
-    return this.request<{ recipients: Recipient[]; count: number }>(endpoint);
-  }
-
-  async createRecipient(recipient: RecipientCreate): Promise<{ recipient_id: string; status: string }> {
-    return this.request<{ recipient_id: string; status: string }>('/ngo/recipients', {
+    return this.request<{ account_id: string }>('/accounts', {
       method: 'POST',
-      body: JSON.stringify(recipient),
+      body: JSON.stringify(accountData),
     });
   }
 
-  async updateRecipientBalance(
-    recipientId: string, 
-    operation: BalanceOperation
-  ): Promise<{
-    previous_balance: number;
-    new_balance: number;
-    operation: string;
-    amount: number;
-  }> {
-    return this.request(`/ngo/recipients/${recipientId}/balance`, {
-      method: 'POST',
-      body: JSON.stringify(operation),
-    });
+  async getCurrentUser(): Promise<NGO> {
+    const account = await this.request<{
+      account_id: string;
+      account_type: string;
+      name: string;
+      email: string;
+      ngo_id?: string;
+      status: string;
+      created_at: string;
+    }>('/accounts/me');
+    
+    // Transform account data to match NGO interface
+    const ngo: NGO = {
+      ngo_id: account.account_id,
+      email: account.email,
+      organization_name: account.name,
+      contact_name: account.name, // Use name as contact_name for now
+      phone: '', // Not available in account data
+      address: '', // Not available in account data
+      description: '', // Not available in account data
+      status: account.status as 'active' | 'inactive',
+      created_at: account.created_at,
+      default_program_id: account.ngo_id || ''
+    };
+    
+    return ngo;
   }
 
-  async getRecipient(recipientId: string): Promise<Recipient> {
-    return this.request<Recipient>(`/ngo/recipients/${recipientId}`);
-  }
+  // Note: Dashboard and recipient methods removed as endpoints were deleted
+  // If you need these features, the corresponding backend endpoints need to be recreated
 
   // Health check
   async healthCheck(): Promise<{ ok: boolean; xrpl: boolean; network: string }> {
