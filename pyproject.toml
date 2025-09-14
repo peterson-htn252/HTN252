@@ -12,7 +12,7 @@ dependencies = [
     "uvicorn[standard]",
     "numpy>=1.20",
     "python-dotenv",
-    "boto3",
+    "supabase",
     "requests",
     "flasgger",
     "apispec",
