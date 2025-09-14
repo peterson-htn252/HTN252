@@ -9,7 +9,6 @@ from core.database import (
     TBL_FACE_MAPS,
     TBL_PENDING_FACE_MAPS,
     TBL_RECIPIENTS,
-    TBL_ACCOUNTS,
 )
 from core.utils import now_iso
 from core.xrpl import derive_address_from_public_key
@@ -307,7 +306,7 @@ async def face_identify_batch(
                 continue
             score = _cosine(unk, e)
             scored.append({
-                "account_id": it.get("account_id"),
+                "recipient_id": it.get("recipient_id"),
                 "face_id": it.get("face_id"),
                 "score": float(score),
             })
@@ -326,13 +325,16 @@ async def face_identify_batch(
 
     for m in top:
         try:
-            acc = TBL_ACCOUNTS.get_item(Key={"account_id": m["account_id"]}).get("Item")
-            if acc:
-                m["public_key"] = acc.get("public_key")
-                m["name"] = acc.get("name")
-                addr = acc.get("address")
-                if not addr and acc.get("public_key"):
-                    addr = derive_address_from_public_key(acc["public_key"])
+            rec = (
+                TBL_RECIPIENTS.get_item(Key={"recipient_id": m["recipient_id"]})
+                .get("Item")
+            )
+            if rec:
+                m["public_key"] = rec.get("public_key")
+                m["name"] = rec.get("name")
+                addr = rec.get("address")
+                if not addr and rec.get("public_key"):
+                    addr = derive_address_from_public_key(rec["public_key"])
                 if addr:
                     m["address"] = addr
         except Exception:
@@ -351,12 +353,12 @@ async def face_identify_batch_public(
     files: List[UploadFile] = File(...),
     top_k: int = 3,
     threshold: float = 0.40,
+    ngo_id: Optional[str] = Form(None),
 ):
     """
     Public version of identify_batch for payment terminal (no auth required).
     Performs a global search across all face maps to identify the account.
     """
-    # Build embeddings from the provided burst of images
     unk_embs: List[np.ndarray] = []
     frames_used = 0
 
@@ -382,6 +384,7 @@ async def face_identify_batch_public(
     items = resp.get("Items", []) or []
 
     scored = []
+
     mismatched = 0
     for it in items:
         try:
@@ -442,4 +445,3 @@ async def face_identify_batch_public(
         "search_scope": "global",
         "debug": {"mismatched_dims": int(mismatched)},
     }
-

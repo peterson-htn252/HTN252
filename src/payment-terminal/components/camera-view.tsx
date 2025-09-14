@@ -7,7 +7,7 @@ import { Camera, CameraOff, CheckCircle } from "lucide-react"
 
 export interface VerificationResult {
   success: boolean
-  accountId?: string
+  recipientId?: string
   publicKey?: string
 }
 
@@ -88,7 +88,7 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
       setVerificationProgress(100)
       onVerificationComplete?.({
         success,
-        accountId: success ? topMatch.account_id : undefined,
+        recipientId: success ? topMatch.recipient_id : undefined,
         publicKey: success ? topMatch.public_key : undefined,
       })
     } catch (err) {
