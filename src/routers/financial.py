@@ -9,6 +9,8 @@ from core.xrpl import (
     derive_address_from_public_key,
     fetch_xrp_balance_drops,
     convert_drops_to_usd,
+    transfer_between_wallets,
+    convert_usd_to_drops,
 )
 from core.database import TBL_RECIPIENTS, TBL_PAYOUTS, TBL_STORE_METHODS, TBL_MOVES
 from core.config import NGO_HOT_ADDRESS
@@ -24,21 +26,68 @@ def create_quote(body: QuoteRequest):
 
 @router.post("/redeem", tags=["redeem"])
 def redeem(body: RedeemBody):
-    # Get recipient and check balance
+    # Get recipient and validate they exist
     recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": body.recipient_id}).get("Item")
     if not recipient:
         raise HTTPException(404, "Recipient not found")
     
-    current_balance = recipient.get("balance", 0.0)
+    # Get recipient's wallet details
+    recipient_private_key = recipient.get("private_key")
+    recipient_public_key = recipient.get("public_key")
+    recipient_address = recipient.get("address")
+    
+    if not recipient_private_key or not recipient_public_key:
+        raise HTTPException(400, "Recipient wallet not properly configured")
+    
+    # Derive address if not stored
+    if not recipient_address:
+        recipient_address = derive_address_from_public_key(recipient_public_key)
+        if not recipient_address:
+            raise HTTPException(400, "Cannot derive recipient address from public key")
+    
+    # Convert amount and check XRPL wallet balance
     amount_major = body.amount_minor / 100.0  # Convert minor units to major units
+    amount_usd = amount_major  # Assuming USD
     
-    if current_balance < amount_major:
-        raise HTTPException(400, "Insufficient balance")
+    # Check XRPL wallet balance
+    recipient_balance_drops = fetch_xrp_balance_drops(recipient_address)
+    if recipient_balance_drops is None:
+        raise HTTPException(500, "Unable to check recipient wallet balance")
     
+    recipient_balance_usd = convert_drops_to_usd(recipient_balance_drops)
+    
+    if recipient_balance_usd < amount_usd:
+        raise HTTPException(400, f"Insufficient XRPL wallet balance. Available: ${recipient_balance_usd:.2f}, Required: ${amount_usd:.2f}")
+    
+    # Get NGO/store destination address (for now, use NGO hot address)
+    destination_address = NGO_HOT_ADDRESS
+    if not destination_address:
+        raise HTTPException(500, "Store/NGO destination address not configured")
+    
+    # Create memo for the transaction
+    memo_text = f"Payment: {body.voucher_id} | Store: {body.store_id} | Program: {body.program_id}"
+    
+    # Transfer from recipient's XRPL wallet to store/NGO wallet
+    try:
+        tx_hash = transfer_between_wallets(
+            sender_seed=recipient_private_key,
+            sender_address=recipient_address,
+            recipient_address=destination_address,
+            amount_usd=amount_usd,
+            memo=memo_text
+        )
+        
+        if not tx_hash:
+            raise HTTPException(500, "XRPL transaction failed")
+            
+    except Exception as e:
+        raise HTTPException(500, f"XRPL transfer failed: {str(e)}")
+    
+    # Create quote and payout record
     quote = get_quote("XRP", body.currency, body.amount_minor)
-    memos = {"voucher_id": body.voucher_id, "store_id": body.store_id, "program_id": body.program_id}
-    tx_hash = pay_offramp_on_xrpl(to_drops(body.amount_minor), memos)
     payout_id = str(uuid.uuid4())
+    
+    # Store payout record
     TBL_PAYOUTS.put_item(Item={
         "payout_id": payout_id,
         "store_id": body.store_id,
@@ -48,35 +97,42 @@ def redeem(body: RedeemBody):
         "quote_id": quote["quote_id"],
         "xrpl_tx_hash": tx_hash,
         "offramp_ref": None,
-        "status": "processing",
+        "status": "completed",  # Mark as completed since we did the transfer
         "created_at": now_iso(),
     })
     
-    # Update recipient balance
-    new_balance = current_balance - amount_major
+    # Update recipient's database balance to reflect the XRPL transfer
+    current_db_balance = recipient.get("balance", 0.0)
+    new_db_balance = current_db_balance - amount_major
     TBL_RECIPIENTS.update_item(
         Key={"recipient_id": body.recipient_id},
         UpdateExpression="SET balance = :balance",
-        ExpressionAttributeValues={":balance": new_balance},
+        ExpressionAttributeValues={":balance": new_db_balance},
     )
-    if tx_hash:
-        TBL_MOVES.put_item(Item={
-            "tx_hash": tx_hash,
-            "classic_address": (NGO_HOT_ADDRESS or "ngo_hot_unknown"),
-            "direction": "out",
-            "delivered_currency": "XRP",
-            "delivered_minor": to_drops(body.amount_minor),
-            "memos": memos,
-            "validated_ledger": 0,
-            "occurred_at": now_iso(),
-        })
+    
+    # Record the transaction in moves table
+    memos = {"voucher_id": body.voucher_id, "store_id": body.store_id, "program_id": body.program_id}
+    TBL_MOVES.put_item(Item={
+        "tx_hash": tx_hash,
+        "classic_address": recipient_address,
+        "direction": "out",
+        "delivered_currency": "XRP",
+        "delivered_minor": convert_usd_to_drops(amount_usd),
+        "memos": memos,
+        "validated_ledger": 0,
+        "occurred_at": now_iso(),
+    })
+    
     return {
         "payout_id": payout_id,
         "store_currency": body.currency,
         "amount_minor": body.amount_minor,
         "quote": quote,
         "xrpl_tx_hash": tx_hash,
-        "status": "processing",
+        "status": "completed",
+        "recipient_address": recipient_address,
+        "destination_address": destination_address,
+        "amount_transferred_usd": amount_usd,
     }
 
 
