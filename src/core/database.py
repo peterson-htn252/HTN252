@@ -70,6 +70,12 @@ class SupabaseTable:
         resp = q.execute()
         return {"Items": resp.data}
 
+    def delete_item(self, Key: dict):
+        q = self.client.table(self.name).delete()
+        for k, v in Key.items():
+            q = q.eq(k, v)
+        q.execute()
+
 
 TBL_ACCOUNTS = SupabaseTable(supabase, os.getenv("ACCOUNTS_TABLE", "accounts"))
 TBL_WALLETS = SupabaseTable(supabase, os.getenv("XRPL_WALLETS_TABLE", "xrpl_wallets"))
@@ -86,3 +92,6 @@ TBL_EXPENSES = SupabaseTable(supabase, os.getenv("EXPENSES_TABLE", "expenses"))
 TBL_RECIPIENTS = SupabaseTable(supabase, os.getenv("RECIPIENTS_TABLE", "recipients"))
 TBL_NGO_EXPENSES = SupabaseTable(supabase, os.getenv("NGO_EXPENSES_TABLE", "ngo_expense"))
 TBL_FACE_MAPS = SupabaseTable(supabase, os.getenv("FACE_MAPS_TABLE", "face_maps"))
+TBL_PENDING_FACE_MAPS = SupabaseTable(
+    supabase, os.getenv("PENDING_FACE_MAPS_TABLE", "pending_face_maps")
+)
