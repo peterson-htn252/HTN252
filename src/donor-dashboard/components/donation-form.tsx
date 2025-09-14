@@ -29,6 +29,7 @@ interface NGOProgram {
   lifetime_donations: number
   created_at: string
   xrpl_address?: string
+  summary?: string
 }
 
 export function DonationForm({ onDonationComplete }: DonationFormProps) {
@@ -55,16 +56,39 @@ useEffect(() => {
     try {
       const ngos = await fetchNGOs();
 
-      const progs: NGOProgram[] = ngos.map((n: any) => ({
-        account_id: n.account_id,
-        name: n.name,
-        description: n.description,
-        goal: Number(n.goal ?? 0),
-        status: String(n.status ?? "inactive"),
-        lifetime_donations: Number(n.lifetime_donations ?? 0),
-        created_at: n.created_at,
-        xrpl_address: n.address ?? n.xrpl_address ?? "",   // 👈 map it here
-      }));
+      const progs: NGOProgram[] = await Promise.all(
+        ngos.map(async (n: any) => {
+          const base: NGOProgram = {
+            account_id: n.account_id,
+            name: n.name,
+            description: n.description,
+            goal: Number(n.goal ?? 0),
+            status: String(n.status ?? "inactive"),
+            lifetime_donations: Number(n.lifetime_donations ?? 0),
+            created_at: n.created_at,
+            xrpl_address: n.address ?? n.xrpl_address ?? "", // 👈 map it here
+          }
+
+          let summary = ""
+          if (base.description) {
+            try {
+              const res = await fetch("/api/summarize", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: base.description }),
+              })
+              if (res.ok) {
+                const data = await res.json()
+                summary = data.summary
+              }
+            } catch (err) {
+              console.error("Failed to summarize program:", err)
+            }
+          }
+
+          return { ...base, summary }
+        })
+      )
 
       setPrograms(progs.filter((p) => p.status.toLowerCase() === "active"));
     } catch (e) {
@@ -199,6 +223,12 @@ useEffect(() => {
                     <Badge variant="default">{program.status}</Badge>
                   </div>
                   <CardDescription>{program.description}</CardDescription>
+                  {program.summary && (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      <span className="font-medium">AI Summary: </span>
+                      {program.summary}
+                    </p>
+                  )}
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
@@ -239,6 +269,15 @@ useEffect(() => {
           <CardDescription>Supporting: {selectedProgramData?.name}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {selectedProgramData?.description && (
+            <p className="text-sm text-muted-foreground">{selectedProgramData.description}</p>
+          )}
+          {selectedProgramData?.summary && (
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium">AI Summary: </span>
+              {selectedProgramData.summary}
+            </p>
+          )}
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
               {[25, 50, 100].map((amount) => (
@@ -299,8 +338,16 @@ useEffect(() => {
             Donating ${donationAmount} to {selectedProgramData?.name}
           </CardDescription>
         </CardHeader>
-
         <CardContent className="space-y-6">
+          {selectedProgramData?.description && (
+            <p className="text-sm text-muted-foreground">{selectedProgramData.description}</p>
+          )}
+          {selectedProgramData?.summary && (
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium">AI Summary: </span>
+              {selectedProgramData.summary}
+            </p>
+          )}
           <div className="space-y-4">
             <div className="space-y-3">
               <Label>Payment Method</Label>
