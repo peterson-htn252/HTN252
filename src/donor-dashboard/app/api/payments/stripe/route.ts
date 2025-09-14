@@ -1,50 +1,53 @@
-import { type NextRequest, NextResponse } from "next/server"
-import Stripe from "stripe"
+// app/api/payments/stripe/route.ts
+import Stripe from "stripe";
+
+export const runtime = "nodejs";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-06-20",
-})
+  // You can omit apiVersion to use account default
+  // apiVersion: "2025-08-27.basil" as any,
+});
 
-export async function POST(request: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const { amount, currency, programId, email } = await request.json()
+    const body = await req.json();
+    const amount = Number(body?.amount);
+    const currency = (body?.currency || "usd").toLowerCase();
+    const programId = String(body?.programId || "");
+    const email = String(body?.email || "");
+    const ngoPublicKey = String(body?.ngoPublicKey || "");
 
-    // Create payment intent with Stripe
-    const paymentIntent = await stripe.paymentIntents.create({
+    // Helpful logging while debugging
+    console.log("[PI:create] incoming", { amount, currency, programId, email, ngoPublicKeyPresent: !!ngoPublicKey });
+
+    if (!amount || isNaN(amount) || amount < 50) { // Stripe min amount > 0; 50 = $0.50 in cents
+      return Response.json({ error: "Invalid amount (cents) supplied" }, { status: 400 });
+    }
+    if (!email.includes("@")) {
+      return Response.json({ error: "Missing/invalid email" }, { status: 400 });
+    }
+    if (!programId) {
+      return Response.json({ error: "Missing programId" }, { status: 400 });
+    }
+    if (!ngoPublicKey) {
+      return Response.json({ error: "Missing ngoPublicKey (XRPL address)" }, { status: 400 });
+    }
+
+    const intent = await stripe.paymentIntents.create({
       amount,
       currency,
-      automatic_payment_methods: {
-        enabled: true,
-      },
-      metadata: {
-        programId,
-        email,
-      },
-    })
+      receipt_email: email,
+      automatic_payment_methods: { enabled: true },
+      metadata: { programId, email, ngoPublicKey },
+    });
 
-    // Generate donation ID
-    const donationId = `DON-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    if (!intent.client_secret) {
+      return Response.json({ error: "No client secret from Stripe" }, { status: 500 });
+    }
 
-    // Store donation record in database
-    // TODO: Replace with actual database call
-    console.log("[v0] Creating donation record:", {
-      donationId,
-      programId,
-      amount: amount / 100,
-      email,
-      stripePaymentIntentId: paymentIntent.id,
-      status: "pending",
-    })
-
-    return NextResponse.json({
-      paymentIntent: {
-        id: paymentIntent.id,
-        client_secret: paymentIntent.client_secret,
-      },
-      donationId,
-    })
-  } catch (error) {
-    console.error("[v0] Stripe payment error:", error)
-    return NextResponse.json({ error: "Payment processing failed" }, { status: 500 })
+    return Response.json({ clientSecret: intent.client_secret, paymentIntentId: intent.id });
+  } catch (e: any) {
+    console.error("[PI:create] error", e);
+    return Response.json({ error: e?.message || "Server error" }, { status: 500 });
   }
 }

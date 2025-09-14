@@ -155,18 +155,25 @@ def get_current_account(current_user: dict = Depends(verify_token)):
 @router.get("/accounts/ngos", tags=["accounts"], response_model=List[NGOAccountSummary])
 def get_all_ngo_accounts():
     """
-    Get all NGO accounts with their name, description, and goal.
-    Returns a list of NGO account summaries.
+    Get all NGO accounts with their name, description, goal, and XRPL address.
     """
     try:
-        # Query all accounts with account_type = "NGO"
         response = TBL_ACCOUNTS.scan(
             FilterExpression="account_type = :account_type",
             ExpressionAttributeValues={":account_type": "NGO"}
         )
-        
-        ngo_accounts = []
+
+        ngo_accounts: List[NGOAccountSummary] = []
         for item in response.get("Items", []):
+            # Safely derive an XRPL address from the stored public_key (may be None for legacy rows)
+            try:
+                xrpl_addr = None
+                pub = item.get("public_key")
+                if pub:
+                    xrpl_addr = derive_address_from_public_key(pub)
+            except Exception:
+                xrpl_addr = None
+
             ngo_accounts.append(NGOAccountSummary(
                 account_id=item["account_id"],
                 name=item["name"],
@@ -178,9 +185,10 @@ def get_all_ngo_accounts():
                 ),
                 status=item["status"],
                 lifetime_donations=item.get("lifetime_donations", 0),
-                created_at=item["created_at"]
+                created_at=item["created_at"],
+                xrpl_address=xrpl_addr,   # ✅ include it in the response
             ))
-        
+
         return ngo_accounts
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve NGO accounts: {str(e)}")
@@ -268,7 +276,6 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-
 
 
 
