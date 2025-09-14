@@ -4,7 +4,7 @@ import numpy as np
 import uuid, json
 
 from core.face import get_face_app, FACE_AVAILABLE
-from core.database import TBL_FACE_MAPS, TBL_ACCOUNTS
+from core.database import TBL_FACE_MAPS, TBL_PENDING_FACE_MAPS, TBL_ACCOUNTS
 from core.utils import now_iso
 
 router = APIRouter()
@@ -45,32 +45,19 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
 @router.post("/face/enroll", tags=["face"])
 async def face_enroll(
     files: List[UploadFile] = File(...),
-    name: str = Form(...),
+    session_id: Optional[str] = Form(None),
 ):
     """
     Enroll a user face map from a short burst.
-    Accepts files and the user's name only.
-    Looks up account_id and ngo_id from TBL_ACCOUNTS.
+    Accepts files and an optional session identifier. If none is provided one is
+    generated. The embedding is stored in the pending face map table keyed by
+    this session.
     """
     if not FACE_AVAILABLE or get_face_app() is None:
         raise HTTPException(503, "InsightFace not available on server")
 
-    # Resolve account by name. Names may not be unique; handle that.
-    resp = TBL_ACCOUNTS.scan(
-        FilterExpression="#nm = :nm",
-        ExpressionAttributeNames={"#nm": "name"},
-        ExpressionAttributeValues={":nm": name},
-    )
-    accounts = resp.get("Items", []) or []
-    if not accounts:
-        raise HTTPException(404, "Account not found for this name")
-    if len(accounts) > 1:
-        # You can change this to pick the latest or require a second field to disambiguate
-        raise HTTPException(409, "Multiple accounts found with this name. Please disambiguate.")
-
-    account = accounts[0]
-    account_id = account["account_id"]
-    ngo_id = account["ngo_id"]
+    if session_id is None:
+        session_id = str(uuid.uuid4())
 
     import cv2
 
@@ -133,21 +120,61 @@ async def face_enroll(
 
     row = {
         "face_id": str(uuid.uuid4()),
-        "account_id": account_id,
-        "ngo_id": ngo_id,
+        "session_id": session_id,
         "embedding": json.dumps([float(x) for x in c.tolist()]),
         "model": "buffalo_l",
         "meta": json.dumps({"frames_used": used, "source": "batch_enroll"}),
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
-    TBL_FACE_MAPS.put_item(Item=row)
+    TBL_PENDING_FACE_MAPS.put_item(Item=row)
 
     return {
         "face_id": row["face_id"],
-        "account_id": account_id,
-        "ngo_id": ngo_id,
+        "session_id": session_id,
         "frames_used": used,
+    }
+
+
+@router.post("/face/promote", tags=["face"])
+async def face_promote(
+    session_id: str = Form(...),
+    name: str = Form(...),
+):
+    """Link a pending face embedding (by session) to an account identified by name."""
+    resp = TBL_PENDING_FACE_MAPS.scan(
+        FilterExpression="#sid = :sid",
+        ExpressionAttributeNames={"#sid": "session_id"},
+        ExpressionAttributeValues={":sid": session_id},
+    )
+    items = resp.get("Items", []) or []
+    if not items:
+        raise HTTPException(404, "Pending face map not found for this session")
+
+    row = items[0]
+
+    # lookup account by name
+    acct_resp = TBL_ACCOUNTS.scan(
+        FilterExpression="#nm = :nm",
+        ExpressionAttributeNames={"#nm": "name"},
+        ExpressionAttributeValues={":nm": name},
+    )
+    accounts = acct_resp.get("Items", []) or []
+    if not accounts:
+        raise HTTPException(404, "Account not found for this name")
+    account = accounts[0]
+
+    row["account_id"] = account["account_id"]
+    row["ngo_id"] = account.get("ngo_id")
+    row["updated_at"] = now_iso()
+
+    TBL_FACE_MAPS.put_item(Item=row)
+    TBL_PENDING_FACE_MAPS.delete_item({"face_id": row["face_id"]})
+
+    return {
+        "face_id": row["face_id"],
+        "account_id": row["account_id"],
+        "ngo_id": row.get("ngo_id"),
     }
 
 @router.post("/face/identify_batch", tags=["face"])

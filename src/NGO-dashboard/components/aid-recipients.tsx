@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast"
 import { apiClient } from "@/lib/api"
 import { Recipient as APIRecipient, RecipientCreate, BalanceOperation } from "@/lib/types"
 import { useAuth } from "@/contexts/auth-context"
+import { formatCurrency } from "@/lib/utils"
 
 // Transform API recipient to local format
 interface LocalRecipient {
@@ -122,8 +123,8 @@ export function AidRecipients() {
       toast({
         title: "Deposit Successful",
         description: result.tx_hash 
-          ? `$${amount} has been transferred to ${selectedRecipient.name}'s wallet. Transaction: ${result.tx_hash.substring(0, 8)}...`
-          : `$${amount} has been deposited to ${selectedRecipient.name}'s wallet.`,
+          ? `$${formatCurrency(amount)} has been transferred to ${selectedRecipient.name}'s wallet. Transaction: ${result.tx_hash.substring(0, 8)}...`
+          : `$${formatCurrency(amount)} has been deposited to ${selectedRecipient.name}'s wallet.`,
       })
 
       setDepositAmount("")
@@ -348,7 +349,7 @@ export function AidRecipients() {
             <CardContent className="space-y-4">
               <div className="text-sm">
                 <div className="text-muted-foreground">Wallet Balance</div>
-                <div className="font-bold text-lg text-foreground">${recipient.walletBalance}</div>
+                <div className="font-bold text-lg text-foreground">${formatCurrency(recipient.walletBalance)}</div>
               </div>
 
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -373,7 +374,7 @@ export function AidRecipients() {
                   <DialogHeader>
                     <DialogTitle className="text-foreground">Deposit Money</DialogTitle>
                     <DialogDescription className="text-muted-foreground">
-                      Add funds to {recipient.name}'s wallet. Current balance: ${recipient.walletBalance}
+                      Add funds to {recipient.name}'s wallet. Current balance: ${formatCurrency(selectedRecipient.walletBalance)}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
