@@ -14,7 +14,6 @@ from models import (
 from core.auth import get_current_ngo
 from core.database import (
     TBL_RECIPIENTS,
-    TBL_EXPENSES,
     TBL_WALLETS,
 )
 from core.xrpl import make_challenge, verify_challenge, XRPL_AVAILABLE
@@ -217,11 +216,6 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
                 ":balance": new_balance,
             },
         )
-        
-        if body.operation_type == "deposit":
-            # Transfer completed - no need to track in database tables
-            pass
-        
         return {
             "previous_balance": current_balance,
             "new_balance": new_balance,
