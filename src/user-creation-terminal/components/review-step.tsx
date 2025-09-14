@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -7,38 +8,30 @@ import { CheckCircle, User, Calendar, MapPin, CreditCard, Shield } from "lucide-
 
 interface ReviewStepProps {
   extractedData: any
-  onComplete: () => void
+  onComplete: (updatedData: any) => void
 }
 
 export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
   if (!extractedData) return null
 
+  const [formData, setFormData] = useState({
+    firstName: extractedData.firstName,
+    lastName: extractedData.lastName,
+    dateOfBirth: extractedData.dateOfBirth,
+    idNumber: extractedData.idNumber,
+    address: extractedData.address,
+    expirationDate: extractedData.expirationDate,
+  })
+
+  const [isEditing, setIsEditing] = useState(false)
+
   const dataFields = [
-    {
-      icon: User,
-      label: "Full Name",
-      value: `${extractedData.firstName} ${extractedData.lastName}`,
-    },
-    {
-      icon: Calendar,
-      label: "Date of Birth",
-      value: new Date(extractedData.dateOfBirth).toLocaleDateString(),
-    },
-    {
-      icon: CreditCard,
-      label: "ID Number",
-      value: extractedData.idNumber,
-    },
-    {
-      icon: MapPin,
-      label: "Address",
-      value: extractedData.address,
-    },
-    {
-      icon: Calendar,
-      label: "ID Expiration",
-      value: new Date(extractedData.expirationDate).toLocaleDateString(),
-    },
+    { icon: User, label: "First Name", name: "firstName", type: "text" },
+    { icon: User, label: "Last Name", name: "lastName", type: "text" },
+    { icon: Calendar, label: "Date of Birth", name: "dateOfBirth", type: "date" },
+    { icon: CreditCard, label: "ID Number", name: "idNumber", type: "text" },
+    { icon: MapPin, label: "Address", name: "address", type: "text" },
+    { icon: Calendar, label: "ID Expiration", name: "expirationDate", type: "date" },
   ]
 
   return (
@@ -81,14 +74,29 @@ export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
           </h3>
 
           <div className="grid gap-4">
-            {dataFields.map((field, index) => {
+            {dataFields.map((field) => {
               const IconComponent = field.icon
               return (
-                <div key={index} className="flex items-center gap-3 p-3 bg-card rounded-lg border">
+                <div key={field.name} className="flex items-center gap-3 p-3 bg-card rounded-lg border">
                   <IconComponent className="w-5 h-5 text-primary flex-shrink-0" />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-muted-foreground">{field.label}</p>
-                    <p className="font-semibold">{field.value}</p>
+                    {isEditing ? (
+                      <input
+                        type={field.type}
+                        value={formData[field.name]}
+                        onChange={(e) =>
+                          setFormData({ ...formData, [field.name]: e.target.value })
+                        }
+                        className="w-full p-1 border rounded bg-background"
+                      />
+                    ) : (
+                      <p className="font-semibold">
+                        {field.type === "date"
+                          ? new Date(formData[field.name]).toLocaleDateString()
+                          : formData[field.name]}
+                      </p>
+                    )}
                   </div>
                 </div>
               )
@@ -109,10 +117,14 @@ export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
 
         {/* Action Buttons */}
         <div className="flex gap-4 pt-4">
-          <Button variant="outline" className="flex-1 bg-transparent">
-            {"Edit Information"}
+          <Button
+            variant="outline"
+            className="flex-1 bg-transparent"
+            onClick={() => setIsEditing(!isEditing)}
+          >
+            {isEditing ? "Done Editing" : "Edit Information"}
           </Button>
-          <Button onClick={onComplete} className="flex-1" size="lg">
+          <Button onClick={() => onComplete(formData)} className="flex-1" size="lg">
             {"Confirm & Create Account"}
           </Button>
         </div>
