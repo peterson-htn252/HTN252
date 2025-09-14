@@ -18,6 +18,7 @@ export function UserCreationDashboard() {
   const [idUploadComplete, setIdUploadComplete] = useState(false)
   const [extractedData, setExtractedData] = useState<any>(null)
   const [accountId, setAccountId] = useState<string | null>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null)
 
   const steps = [
     { id: "welcome", title: "Welcome", icon: User },
@@ -45,6 +46,7 @@ export function UserCreationDashboard() {
       alert("Face enrollment failed. Please try again.")
       return
     }
+    setSessionId(data.session_id)
     setAccountId(data.account_id)
     setFaceScanComplete(true)
     setCurrentStep("id-upload")
@@ -57,19 +59,17 @@ export function UserCreationDashboard() {
   }
 
   const handleReviewComplete = async (updatedData: any) => {
-    const body = {
-      account_id: accountId,
-      account_type: "RECIPIENT",
-      status: "active",
-      name: `${updatedData.firstName} ${updatedData.lastName}`,
-      email: `${updatedData.idNumber}@example.com`,
-      password: "changeme123",
+    const fd = new FormData()
+    if (sessionId) {
+      fd.append("session_id", sessionId)
     }
-    const res = await fetch("http://localhost:8000/accounts", {
+    fd.append("name", `${updatedData.firstName} ${updatedData.lastName}`)
+
+    const res = await fetch("http://localhost:8000/face/promote", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: fd,
     })
+
     if (!res.ok) {
       alert("Account creation failed")
       return
