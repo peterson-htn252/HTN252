@@ -61,6 +61,12 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
       return false;
     }
     
+    const goalNumber = Number(formData.goal)
+    if (!Number.isFinite(goalNumber) || goalNumber <= 0) {
+      setValidationError('Goal must be a positive number of dollars');
+      return false;
+    }
+
     return true;
   };
 
@@ -77,7 +83,7 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
         password: formData.password,
         organization_name: formData.organization_name,
         contact_name: formData.contact_name,
-        goal: formData.goal,
+        goal: Number(formData.goal),
         description: formData.description,
       });
       
@@ -195,16 +201,17 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
             
             <div className="space-y-2">
               <Label htmlFor="goal" className="text-foreground">
-                Organization Goal <span className="text-red-500">*</span>
+                Funding Goal ($) <span className="text-red-500">*</span>
               </Label>
               <Input
                 id="goal"
                 name="goal"
-                type="text"
-                placeholder="e.g., Provide clean water to 1000 families"
+                type="number"
+                placeholder="e.g., 1000"
                 value={formData.goal}
                 onChange={handleChange}
                 className="bg-input border-border"
+                min="1"
                 required
               />
             </div>
