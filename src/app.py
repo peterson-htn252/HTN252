@@ -19,7 +19,7 @@ Run:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import accounts, recipients, face, financial, credentials, auth as auth_router, dashboard, meta
+from routers import accounts, recipients, face, financial, credentials, auth as auth_router, dashboard, meta, llm
 
 app = FastAPI(title="XRPL Voucher APIs (Supabase + Face)", version="1.0.0")
 app.add_middleware(
@@ -38,6 +38,7 @@ app.include_router(credentials.router)
 app.include_router(auth_router.router)
 app.include_router(dashboard.router)
 app.include_router(meta.router)
+app.include_router(llm.router)
 
 if __name__ == "__main__":
     import uvicorn
