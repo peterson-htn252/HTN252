@@ -354,27 +354,92 @@ async def face_identify_batch_public(
 ):
     """
     Public version of identify_batch for payment terminal (no auth required).
-    For demo purposes, returns a mock successful identification.
+    Performs a global search across all face maps to identify the account.
     """
-    # For demo purposes, return a mock successful identification
-    frames_used = len(files)
-    
-    if frames_used == 0:
-        raise HTTPException(400, "No images provided")
-    
-    # Mock successful match for demo - using valid UUID format
-    mock_match = {
-        "account_id": "7c18326a-eafb-4f90-804c-6926baacb38a",  # Valid UUID format
-        "public_key": "demo_public_key_abc123", 
-        "similarity": 0.85,
-        "ngo_id": "69193d5d-aa14-42a0-b556-dd000390b3a3",  # Valid UUID format
-        "ngo_name": "Volcano Relief Alliance"
-    }
-    
+    # Build embeddings from the provided burst of images
+    unk_embs: List[np.ndarray] = []
+    frames_used = 0
+
+    for uf in files:
+        data = await uf.read()
+        if not data:
+            continue
+        try:
+            img = _img_bytes_to_ndarray(data)
+            emb, _ = _first_face_normed_embedding(img)
+            unk_embs.append(emb)
+            frames_used += 1
+        except HTTPException:
+            continue
+
+    if not unk_embs:
+        raise HTTPException(400, "No faces detected in batch")
+
+    unk = _mean_centroid(unk_embs)
+
+    # Scan all stored face embeddings without NGO scoping
+    resp = TBL_FACE_MAPS.scan()
+    items = resp.get("Items", []) or []
+
+    scored = []
+    mismatched = 0
+    for it in items:
+        try:
+            e = np.asarray(json.loads(it.get("embedding", "[]")), dtype=np.float32)
+            if e.size != unk.size:
+                mismatched += 1
+                continue
+            score = _cosine(unk, e)
+            scored.append(
+                {
+                    "account_id": it.get("account_id") or it.get("recipient_id"),
+                    "face_id": it.get("face_id"),
+                    "score": float(score),
+                    "ngo_id": it.get("ngo_id"),
+                }
+            )
+        except Exception:
+            continue
+
+    scored.sort(key=lambda r: r["score"], reverse=True)
+    top = scored[: max(1, top_k)]
+    if not top or top[0]["score"] < threshold:
+        return {
+            "frames_used": int(frames_used),
+            "matches": [],
+            "model": "buffalo_l",
+            "search_scope": "global",
+            "debug": {"mismatched_dims": int(mismatched)},
+        }
+
+    # Enrich matches with account details
+    for m in top:
+        try:
+            acc_id = m.get("account_id")
+            if not acc_id:
+                continue
+            acc = (
+                TBL_ACCOUNTS.get_item(Key={"account_id": acc_id}).get("Item")
+                or TBL_RECIPIENTS.get_item(Key={"recipient_id": acc_id}).get("Item")
+            )
+            if acc:
+                m["public_key"] = acc.get("public_key")
+                m["name"] = acc.get("name")
+                addr = acc.get("address")
+                if not addr and acc.get("public_key"):
+                    addr = derive_address_from_public_key(acc["public_key"])
+                if addr:
+                    m["address"] = addr
+                if acc.get("ngo_id") and not m.get("ngo_id"):
+                    m["ngo_id"] = acc.get("ngo_id")
+        except Exception:
+            continue
+
     return {
-        "frames_used": frames_used,
-        "matches": [mock_match],
-        "model": "buffalo_l (demo)",
-        "search_scope": "global"
+        "frames_used": int(frames_used),
+        "matches": top,
+        "model": "buffalo_l",
+        "search_scope": "global",
+        "debug": {"mismatched_dims": int(mismatched)},
     }
 
