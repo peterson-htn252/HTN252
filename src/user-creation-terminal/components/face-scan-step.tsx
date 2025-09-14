@@ -15,6 +15,7 @@ export function FaceScanStep({ onComplete }: FaceScanStepProps) {
   const [scanComplete, setScanComplete] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [stream, setStream] = useState<MediaStream | null>(null)
+  const [progress, setProgress] = useState<number>(0)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -36,7 +37,6 @@ export function FaceScanStep({ onComplete }: FaceScanStepProps) {
         audio: false,
       })
 
-      // Always set the stream first. The <video> will render after this state change.
       setStream(mediaStream)
     } catch (err: any) {
       if (location.protocol !== "https:" && location.hostname !== "localhost") {
@@ -56,7 +56,7 @@ export function FaceScanStep({ onComplete }: FaceScanStepProps) {
     setStream(null)
   }
 
-  // When stream changes, attach to the <video> and play after metadata loads
+  // Attach stream
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
@@ -71,62 +71,95 @@ export function FaceScanStep({ onComplete }: FaceScanStepProps) {
     const onLoaded = async () => {
       try {
         await video.play()
-      } catch {
-        // Some browsers require a user gesture. The Start button click usually satisfies it.
-      }
+      } catch {}
     }
 
     video.addEventListener("loadedmetadata", onLoaded, { once: true })
-
-    // If metadata is already available
     if ((video as any).readyState >= 1) {
       video.play().catch(() => {})
     }
-
-    return () => {
-      video.removeEventListener("loadedmetadata", onLoaded)
-    }
+    return () => video.removeEventListener("loadedmetadata", onLoaded)
   }, [stream])
 
-  const captureFrame = () => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas) return
-
-    // Guard against zero dimensions if metadata did not load yet
+  // Burst capture helper
+  const captureBurst = async (
+    video: HTMLVideoElement,
+    frames = 20,
+    maxWidth = 640,
+    quality = 0.9
+  ): Promise<File[]> => {
     if (!video.videoWidth || !video.videoHeight) {
-      setError("Camera not ready yet. Please wait a moment and try again.")
-      return
+      throw new Error("Camera not ready yet")
     }
+    // Use a single offscreen canvas
+    const canvas = canvasRef.current || document.createElement("canvas")
+    const scale = Math.min(1, maxWidth / video.videoWidth)
+    const w = Math.round(video.videoWidth * scale)
+    const h = Math.round(video.videoHeight * scale)
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext("2d")!
+    const files: File[] = []
 
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
+    const dt = 1000 / Math.max(1, frames - 1) // spread across ~1s
+    const t0 = performance.now()
 
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    ctx.drawImage(video, 0, 0)
-
-    setIsScanning(true)
-
-    // Simulate processing
-    setTimeout(() => {
-      setIsScanning(false)
-      setScanComplete(true)
-      stopCamera()
-
-      const faceData = {
-        faceMap: "simulated_face_map_data",
-        confidence: 0.95,
-        timestamp: new Date().toISOString(),
+    for (let i = 0; i < frames; i++) {
+      const target = t0 + i * dt
+      const wait = target - performance.now()
+      if (wait > 0) {
+        await new Promise((r) => setTimeout(r, wait))
       }
 
-      setTimeout(() => onComplete(faceData), 1500)
-    }, 3000)
+      ctx.drawImage(video, 0, 0, w, h)
+      const blob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), "image/jpeg", quality))
+      files.push(new File([blob], `frame_${String(i).padStart(2, "0")}.jpg`, { type: "image/jpeg" }))
+      setProgress(Math.round(((i + 1) / frames) * 100))
+    }
+
+    return files
+  }
+
+  // Capture burst and finish
+  const captureFrame = async () => {
+    const video = videoRef.current
+    if (!video) return
+
+    try {
+      setError(null)
+      setIsScanning(true)
+      setProgress(0)
+
+      const files = await captureBurst(video, 20, 640, 0.9)
+
+      // Stop camera once captured
+      stopCamera()
+      setScanComplete(true)
+      setIsScanning(false)
+
+      // Deliver frames to parent; parent can POST to /face/enroll_batch
+      onComplete({
+        framesUsed: files.length,
+        files,
+        timestamp: new Date().toISOString(),
+      })
+
+      // Example upload (uncomment if you want to upload here):
+      // const fd = new FormData()
+      // fd.append("account_id", "<ACCOUNT_ID>")
+      // for (const f of files) fd.append("files", f) // must match FastAPI param name
+      // await fetch("/face/enroll_batch", { method: "POST", body: fd })
+
+    } catch (e: any) {
+      setIsScanning(false)
+      setError(e?.message || "Failed to capture frames.")
+    }
   }
 
   const resetScan = () => {
     setScanComplete(false)
     setIsScanning(false)
+    setProgress(0)
     startCamera()
   }
 
@@ -142,7 +175,7 @@ export function FaceScanStep({ onComplete }: FaceScanStepProps) {
       <CardHeader className="text-center">
         <CardTitle className="text-2xl text-balance">{"Face Scan Verification"}</CardTitle>
         <CardDescription className="text-pretty">
-          {"Position your face within the frame and click capture when ready. Our system will create a secure face map for verification."}
+          {"Position your face within the frame and capture. We will record a short burst to build a stable face map."}
         </CardDescription>
       </CardHeader>
 
@@ -177,7 +210,7 @@ export function FaceScanStep({ onComplete }: FaceScanStepProps) {
               {scanComplete && (
                 <div className="text-center">
                   <CheckCircle className="w-12 h-12 text-primary mx-auto mb-2" />
-                  <p className="text-sm text-foreground font-medium">{"Face scan completed!"}</p>
+                  <p className="text-sm text-foreground font-medium">{"Face scan completed"}</p>
                 </div>
               )}
 
@@ -185,14 +218,16 @@ export function FaceScanStep({ onComplete }: FaceScanStepProps) {
                 <div className="absolute inset-0 bg-primary/20 flex items-center justify-center pointer-events-none">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2" />
-                    <p className="text-sm font-medium">{"Processing face scan..."}</p>
+                    <p className="text-sm font-medium">
+                      {"Capturing burst... "}
+                      {progress > 0 ? `${progress}%` : ""}
+                    </p>
                   </div>
                 </div>
               )}
             </div>
 
             <div className="h-[90%] w-[80%] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-              {/* Face detection overlay */}
               {stream && !isScanning && !scanComplete && (
                 <div className="absolute inset-4 border-2 border-primary rounded-full opacity-50 pointer-events-none" />
               )}
@@ -200,12 +235,19 @@ export function FaceScanStep({ onComplete }: FaceScanStepProps) {
           </div>
         </div>
 
+        {/* Offscreen canvas used for captures */}
         <canvas ref={canvasRef} className="hidden" />
 
         <div className="flex justify-center gap-4">
           {stream && !isScanning && !scanComplete && (
             <Button onClick={captureFrame} size="lg">
               {"Capture Face Scan"}
+            </Button>
+          )}
+          {scanComplete && (
+            <Button onClick={resetScan} variant="outline" size="lg">
+              <RotateCcw className="w-4 h-4 mr-2" />
+              {"Retake Scan"}
             </Button>
           )}
         </div>
