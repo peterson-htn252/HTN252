@@ -51,12 +51,18 @@ export function UserCreationDashboard() {
   }
 
   const handleIdUploadComplete = async (idData: any) => {
+    setIdUploadComplete(true)
+    setExtractedData(idData)
+    setCurrentStep("review")
+  }
+
+  const handleReviewComplete = async (updatedData: any) => {
     const body = {
       account_id: accountId,
       account_type: "RECIPIENT",
       status: "active",
-      name: `${idData.firstName} ${idData.lastName}`,
-      email: `${idData.idNumber}@example.com`,
+      name: `${updatedData.firstName} ${updatedData.lastName}`,
+      email: `${updatedData.idNumber}@example.com`,
       password: "changeme123",
     }
     const res = await fetch("http://localhost:8000/accounts", {
@@ -70,14 +76,7 @@ export function UserCreationDashboard() {
     }
     const data = await res.json()
     if (data.account_id) setAccountId(data.account_id)
-    setIdUploadComplete(true)
-    setExtractedData(idData)
-    setCurrentStep("review")
-  }
-
-  const handleReviewComplete = () => {
     setCurrentStep("complete")
-    // TODO: Create user account with extractedData and faceData
   }
 
   return (
