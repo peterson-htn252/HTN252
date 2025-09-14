@@ -9,15 +9,30 @@ authors = [
 requires-python = ">=3.9"
 dependencies = [
     "fastapi",
-    "numpy>=1.20",
+    "uvicorn[standard]",
+    "numpy<=2.0.0",
     "python-dotenv",
-    "boto3",
+    "supabase",
     "requests",
     "flasgger",
     "apispec",
     "marshmallow",
     "apispec_webframeworks",
-    "xrpl-py"
+    "xrpl-py",
+    "PyJWT",
+    "passlib[bcrypt]",
+    "email-validator",
+    "python-multipart",
+    "insightface==0.7.3",
+    "onnx<1.16",
+    "onnxruntime>=1.15,<1.19",
+    "pillow",
+    "numpy",
+    "faiss-cpu",
+    "psycopg[binary]",
+    "opencv-python-headless<4.9",
+    "ml-dtypes<0.4",
+    "scipy<1.12"
 ]
 
 [project.optional-dependencies]
