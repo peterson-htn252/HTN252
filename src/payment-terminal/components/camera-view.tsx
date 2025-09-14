@@ -78,7 +78,7 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
     })
 
     try {
-      const resp = await fetch("http://localhost:8000/face/identify_batch_public", {
+      const resp = await fetch("http://localhost:8000/face/identify_batch", {
         method: "POST",
         body: fd,
       })

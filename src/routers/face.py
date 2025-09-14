@@ -258,8 +258,7 @@ async def face_promote(
 async def face_identify_batch(
     files: List[UploadFile] = File(...),
     top_k: int = 3,
-    threshold: float = 0.40,
-    current_ngo: dict = Depends(get_current_ngo),
+    threshold: float = 0.60,
 ):
     """
     Identify an unknown user from a short burst:
@@ -290,10 +289,7 @@ async def face_identify_batch(
     unk = _mean_centroid(unk_embs)
 
     # match within NGO
-    resp = TBL_FACE_MAPS.scan(
-        FilterExpression="ngo_id = :ngo",
-        ExpressionAttributeValues={":ngo": current_ngo["ngo_id"]},
-    )
+    resp = TBL_FACE_MAPS.scan()
     items = resp.get("Items", []) or []
 
     scored = []
@@ -344,104 +340,5 @@ async def face_identify_batch(
         "frames_used": int(frames_used),
         "matches": top,
         "model": "buffalo_l",
-        "debug": {"mismatched_dims": int(mismatched)},
-    }
-
-
-@router.post("/face/identify_batch_public", tags=["face"])
-async def face_identify_batch_public(
-    files: List[UploadFile] = File(...),
-    top_k: int = 3,
-    threshold: float = 0.40,
-    ngo_id: Optional[str] = Form(None),
-):
-    """
-    Public version of identify_batch for payment terminal (no auth required).
-    Performs a global search across all face maps to identify the account.
-    """
-    unk_embs: List[np.ndarray] = []
-    frames_used = 0
-
-    for uf in files:
-        data = await uf.read()
-        if not data:
-            continue
-        try:
-            img = _img_bytes_to_ndarray(data)
-            emb, _ = _first_face_normed_embedding(img)
-            unk_embs.append(emb)
-            frames_used += 1
-        except HTTPException:
-            continue
-
-    if not unk_embs:
-        raise HTTPException(400, "No faces detected in batch")
-
-    unk = _mean_centroid(unk_embs)
-
-    # Scan all stored face embeddings without NGO scoping
-    resp = TBL_FACE_MAPS.scan()
-    items = resp.get("Items", []) or []
-
-    scored = []
-
-    mismatched = 0
-    for it in items:
-        try:
-            e = np.asarray(json.loads(it.get("embedding", "[]")), dtype=np.float32)
-            if e.size != unk.size:
-                mismatched += 1
-                continue
-            score = _cosine(unk, e)
-            scored.append(
-                {
-                    "account_id": it.get("account_id") or it.get("recipient_id"),
-                    "face_id": it.get("face_id"),
-                    "score": float(score),
-                    "ngo_id": it.get("ngo_id"),
-                }
-            )
-        except Exception:
-            continue
-
-    scored.sort(key=lambda r: r["score"], reverse=True)
-    top = scored[: max(1, top_k)]
-    if not top or top[0]["score"] < threshold:
-        return {
-            "frames_used": int(frames_used),
-            "matches": [],
-            "model": "buffalo_l",
-            "search_scope": "global",
-            "debug": {"mismatched_dims": int(mismatched)},
-        }
-
-    # Enrich matches with account details
-    for m in top:
-        try:
-            acc_id = m.get("account_id")
-            if not acc_id:
-                continue
-            acc = (
-                TBL_ACCOUNTS.get_item(Key={"account_id": acc_id}).get("Item")
-                or TBL_RECIPIENTS.get_item(Key={"recipient_id": acc_id}).get("Item")
-            )
-            if acc:
-                m["public_key"] = acc.get("public_key")
-                m["name"] = acc.get("name")
-                addr = acc.get("address")
-                if not addr and acc.get("public_key"):
-                    addr = derive_address_from_public_key(acc["public_key"])
-                if addr:
-                    m["address"] = addr
-                if acc.get("ngo_id") and not m.get("ngo_id"):
-                    m["ngo_id"] = acc.get("ngo_id")
-        except Exception:
-            continue
-
-    return {
-        "frames_used": int(frames_used),
-        "matches": top,
-        "model": "buffalo_l",
-        "search_scope": "global",
         "debug": {"mismatched_dims": int(mismatched)},
     }
