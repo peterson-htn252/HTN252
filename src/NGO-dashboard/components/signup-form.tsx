@@ -19,8 +19,7 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
     confirmPassword: '',
     organization_name: '',
     contact_name: '',
-    phone: '',
-    address: '',
+    goal: '',
     description: '',
   });
   
@@ -41,7 +40,7 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
   };
 
   const validateForm = () => {
-    if (!formData.email || !formData.password || !formData.organization_name || !formData.contact_name) {
+    if (!formData.email || !formData.password || !formData.organization_name || !formData.contact_name || !formData.goal || !formData.description) {
       setValidationError('Please fill in all required fields');
       return false;
     }
@@ -78,9 +77,8 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
         password: formData.password,
         organization_name: formData.organization_name,
         contact_name: formData.contact_name,
-        phone: formData.phone || undefined,
-        address: formData.address || undefined,
-        description: formData.description || undefined,
+        goal: formData.goal,
+        description: formData.description,
       });
       
       // Registration successful - redirect to login
@@ -196,33 +194,25 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="phone" className="text-foreground">Phone Number</Label>
+              <Label htmlFor="goal" className="text-foreground">
+                Organization Goal <span className="text-red-500">*</span>
+              </Label>
               <Input
-                id="phone"
-                name="phone"
-                type="tel"
-                placeholder="+1 (555) 123-4567"
-                value={formData.phone}
-                onChange={handleChange}
-                className="bg-input border-border"
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="address" className="text-foreground">Address</Label>
-              <Input
-                id="address"
-                name="address"
+                id="goal"
+                name="goal"
                 type="text"
-                placeholder="123 Main St, City, State, ZIP"
-                value={formData.address}
+                placeholder="e.g., Provide clean water to 1000 families"
+                value={formData.goal}
                 onChange={handleChange}
                 className="bg-input border-border"
+                required
               />
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="description" className="text-foreground">Organization Description</Label>
+              <Label htmlFor="description" className="text-foreground">
+                Organization Description <span className="text-red-500">*</span>
+              </Label>
               <Input
                 id="description"
                 name="description"
@@ -231,6 +221,7 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
                 value={formData.description}
                 onChange={handleChange}
                 className="bg-input border-border"
+                required
               />
             </div>
             
