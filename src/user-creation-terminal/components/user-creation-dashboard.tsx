@@ -10,18 +10,19 @@ import { FaceScanStep } from "@/components/face-scan-step"
 import { IdUploadStep } from "@/components/id-upload-step"
 import { ReviewStep } from "@/components/review-step"
 
-type Step = "welcome" | "id-upload" | "face-scan" | "review" | "complete"
+type Step = "welcome" | "face-scan" | "id-upload" | "review" | "complete"
 
 export function UserCreationDashboard() {
   const [currentStep, setCurrentStep] = useState<Step>("welcome")
   const [faceScanComplete, setFaceScanComplete] = useState(false)
   const [idUploadComplete, setIdUploadComplete] = useState(false)
   const [extractedData, setExtractedData] = useState<any>(null)
+  const [accountId, setAccountId] = useState<string | null>(null)
 
   const steps = [
     { id: "welcome", title: "Welcome", icon: User },
-    { id: "id-upload", title: "ID Upload", icon: FileText },
     { id: "face-scan", title: "Face Scan", icon: Camera },
+    { id: "id-upload", title: "ID Upload", icon: FileText },
     { id: "review", title: "Review", icon: Shield },
   ]
 
@@ -32,6 +33,7 @@ export function UserCreationDashboard() {
 
   const handleFaceScanComplete = async (faceData: any) => {
     const fd = new FormData()
+    if (accountId) fd.append("account_id", accountId)
     for (const f of faceData.files) fd.append("files", f)
     const res = await fetch("http://localhost:8000/face/enroll", {
       method: "POST",
@@ -39,18 +41,38 @@ export function UserCreationDashboard() {
     })
     const data = await res.json()
     console.log("Face enroll response:", data)
-    if (data.status !== "success") {
+    if (!data || !data.face_id) {
       alert("Face enrollment failed. Please try again.")
       return
     }
+    setAccountId(data.account_id)
     setFaceScanComplete(true)
-    setCurrentStep("review")
+    setCurrentStep("id-upload")
   }
 
-  const handleIdUploadComplete = (idData: any) => {
+  const handleIdUploadComplete = async (idData: any) => {
+    const body = {
+      account_id: accountId,
+      account_type: "RECIPIENT",
+      status: "active",
+      name: `${idData.firstName} ${idData.lastName}`,
+      email: `${idData.idNumber}@example.com`,
+      password: "changeme123",
+    }
+    const res = await fetch("http://localhost:8000/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      alert("Account creation failed")
+      return
+    }
+    const data = await res.json()
+    if (data.account_id) setAccountId(data.account_id)
     setIdUploadComplete(true)
     setExtractedData(idData)
-    setCurrentStep("face-scan")
+    setCurrentStep("review")
   }
 
   const handleReviewComplete = () => {
@@ -121,17 +143,17 @@ export function UserCreationDashboard() {
               <CardContent className="space-y-6">
                 <div className="grid md:grid-cols-3 gap-4">
                   <div className="text-center p-4">
-                    <FileText className="w-12 h-12 text-primary mx-auto mb-3" />
-                    <h3 className="font-semibold mb-2">{"ID Upload"}</h3>
-                    <p className="text-sm text-muted-foreground text-pretty">
-                      {"Upload your government ID for automatic data extraction"}
-                    </p>
-                  </div>
-                  <div className="text-center p-4">
                     <Camera className="w-12 h-12 text-primary mx-auto mb-3" />
                     <h3 className="font-semibold mb-2">{"Face Scan"}</h3>
                     <p className="text-sm text-muted-foreground text-pretty">
                       {"Secure biometric verification using your device camera"}
+                    </p>
+                  </div>
+                  <div className="text-center p-4">
+                    <FileText className="w-12 h-12 text-primary mx-auto mb-3" />
+                    <h3 className="font-semibold mb-2">{"ID Upload"}</h3>
+                    <p className="text-sm text-muted-foreground text-pretty">
+                      {"Upload your government ID for automatic data extraction"}
                     </p>
                   </div>
                   <div className="text-center p-4">
@@ -143,7 +165,7 @@ export function UserCreationDashboard() {
                   </div>
                 </div>
                 <div className="flex justify-center">
-                  <Button onClick={() => setCurrentStep("id-upload")} size="lg" className="px-8">
+                  <Button onClick={() => setCurrentStep("face-scan")} size="lg" className="px-8">
                     {"Start Verification"}
                   </Button>
                 </div>
@@ -151,9 +173,9 @@ export function UserCreationDashboard() {
             </Card>
           )}
 
-          {currentStep === "id-upload" && <IdUploadStep onComplete={handleIdUploadComplete} />}
-
           {currentStep === "face-scan" && <FaceScanStep onComplete={handleFaceScanComplete} />}
+
+          {currentStep === "id-upload" && <IdUploadStep onComplete={handleIdUploadComplete} />}
 
           {currentStep === "review" && <ReviewStep extractedData={extractedData} onComplete={handleReviewComplete} />}
 

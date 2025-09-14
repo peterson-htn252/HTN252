@@ -1,5 +1,5 @@
 # --- new code ---
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 import numpy as np
 import uuid, json
@@ -47,6 +47,7 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
 @router.post("/face/enroll", tags=["face"])
 async def face_enroll_batch(
     files: List[UploadFile] = File(...),
+    account_id: Optional[str] = Form(None),
 ):
     # if not FACE_AVAILABLE:
     #     return {"note": "InsightFace not installed on server"}
@@ -108,7 +109,7 @@ async def face_enroll_batch(
             c = (w2[:, None] * E2).sum(axis=0)
             c = c / (np.linalg.norm(c) + 1e-12)
 
-    account_id = str(uuid.uuid4()) # TODO: make a user account and get the account id
+    account_id = account_id or str(uuid.uuid4())
     current_ngo = {"ngo_id": "demo-ngo"}  # TODO: query from account id
     row = {
         "face_id": str(uuid.uuid4()),

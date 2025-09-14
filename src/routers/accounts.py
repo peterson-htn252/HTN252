@@ -18,7 +18,7 @@ router = APIRouter()
 
 @router.post("/accounts", tags=["accounts"])
 def create_account(body: AccountCreate):
-    account_id = str(uuid.uuid4())
+    account_id = body.account_id or str(uuid.uuid4())
     hashed_password = hash_password(body.password)
     ngo_id = body.ngo_id
     if body.account_type == "NGO" and not ngo_id:

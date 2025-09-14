@@ -5,6 +5,7 @@ AccountType = Literal["NGO", "RECIPIENT"]
 
 
 class AccountCreate(BaseModel):
+    account_id: Optional[str] = None
     account_type: AccountType
     status: Literal["active", "blocked"] = "active"
     name: str
