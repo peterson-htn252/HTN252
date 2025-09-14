@@ -74,7 +74,7 @@ export function PaymentTerminal() {
   const handlePaymentComplete = () => {
     setCurrentStep("accepted")
 
-    const audio = new Audio("/Happy.mp4a")
+    const audio = new Audio("/Happy.m4a")
     audio.play().catch(() => {
       console.log("[v0] Payment sound played")
     })
