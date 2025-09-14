@@ -4,9 +4,8 @@ export interface NGO {
   email: string;
   organization_name: string;
   contact_name: string;
-  phone?: string;
-  address?: string;
-  description?: string;
+  goal: string;
+  description: string;
   status: string;
   default_program_id: string;
   created_at: string;
@@ -68,9 +67,8 @@ export interface RegisterRequest {
   password: string;
   organization_name: string;
   contact_name: string;
-  phone?: string;
-  address?: string;
-  description?: string;
+  goal: string;
+  description: string;
 }
 
 export interface RecipientCreate {
