@@ -217,6 +217,22 @@ async def face_promote(
         raise HTTPException(409, "Multiple accounts share this name. Please disambiguate.")
 
     account = accounts[0]
+    # Ensure this account does not already have a face map
+    existing = TBL_FACE_MAPS.scan(
+        FilterExpression="#rid = :rid",
+        ExpressionAttributeNames={"#rid": "recipient_id"},
+        ExpressionAttributeValues={":rid": account["recipient_id"]},
+    )
+    if existing.get("Items"):
+        raise HTTPException(409, "Face map already exists for this recipient")
+
+    # Mark the recipient as verified
+    TBL_RECIPIENTS.update_item(
+        {"recipient_id": account["recipient_id"]},
+        UpdateExpression="SET verified = :v",
+        ExpressionAttributeValues={":v": True},
+    )
+
     row["recipient_id"] = account["recipient_id"]
     row["ngo_id"] = account.get("ngo_id")
     row["updated_at"] = now_iso()
