@@ -1,14 +1,19 @@
 """
-FastAPI APIs for NGO voucher system on XRPL (wallet-less stores)
+FastAPI APIs for NGO voucher system on XRPL (wallet-less stores) + Facial Recognition (InsightFace)
 - Stores do NOT have wallets; they get fiat payouts via an off-ramp partner
-- NGO has XRPL cold + hot wallets
-- Recipients hold off-ledger balances (with optional XRPL link for withdrawals)
-- Includes credential issuing (VC-JWT), quotes, redeem, payouts, and basic indexing hooks
+- NGO has XRPL hot wallet (dev/test); recipients hold off-ledger balances (with optional XRPL link)
+- Includes: NGO auth, recipients CRUD & balances, quotes, redeem, payouts, store payout methods,
+  credentials (VC-JWT HMAC for dev), dashboard metrics, and facial embeddings enroll/identify
 
 Notes:
-- Replace XRPL + KMS placeholders with your actual implementations for production
-- Supabase tables are assumed created as per earlier messages; env var names below
-- Error handling/logging kept concise for brevity
+- Supabase Postgres is used (service role in backend). Create tables from the schema I provided earlier.
+- XRPL and signing are simplified for a hackathon; swap in real KMS/HSM for prod.
+- InsightFace runs in CPU mode by default here.
+
+Run:
+  pip install fastapi uvicorn supabase insightface onnxruntime opencv-python-headless numpy passlib[bcrypt] pyjwt xrpl-py
+  export SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... JWT_SECRET=... APP_SECRET=...
+  uvicorn app:app --reload --port 8000
 """
 
 import os
@@ -19,18 +24,18 @@ import hmac
 import base64
 import hashlib
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Literal, List, Dict
+from typing import Optional, Literal, List, Dict, Tuple
 
 from supabase import create_client, Client
-from fastapi import FastAPI, HTTPException, Depends, status
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, conint, EmailStr
 import jwt
 from passlib.context import CryptContext
-
-# Optional: install xrpl-py if you plan to hit XRPL testnet/mainnet
+import numpy as np
+from dotenv import load_dotenv
+# Optional: XRPL (testnet)
 try:
     from xrpl.clients import JsonRpcClient
     from xrpl.wallet import Wallet
@@ -40,26 +45,77 @@ try:
 except Exception:
     XRPL_AVAILABLE = False
 
+FACE_AVAILABLE = False
+_face_app = None
+
+def get_face_app():
+    """Lazy import to avoid crashing on incompatible NumPy/ONNX wheels."""
+    global _face_app, FACE_AVAILABLE
+    if _face_app is not None:
+        return _face_app
+    try:
+        from insightface.app import FaceAnalysis  # imported here, not at module level
+        _fa = FaceAnalysis(name="buffalo_l")
+        _fa.prepare(ctx_id=-1, det_size=(640, 640))  # CPU
+        _face_app = _fa
+        FACE_AVAILABLE = True
+        return _face_app
+    except Exception as e:
+        # Keep endpoints returning 503 instead of crashing the server
+        FACE_AVAILABLE = False
+        _face_app = None
+        return None
+
+load_dotenv()
 # ------------------------------
-# ENV & Supabase client
+# ENV & Supabase
 # ------------------------------
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-ClientError = Exception
+# XRPL config (testnet by default)
+XRPL_RPC_URL = os.getenv("XRPL_RPC_URL", "https://s.altnet.rippletest.net:51234")
+XRPL_NETWORK = os.getenv("XRPL_NETWORK", "testnet")
+NGO_HOT_SEED = os.getenv("NGO_HOT_SEED")       # DEV ONLY
+NGO_HOT_ADDRESS = os.getenv("NGO_HOT_ADDRESS")   # DEV ONLY
+OFFRAMP_DEPOSIT_ADDRESS = os.getenv("OFFRAMP_DEPOSIT_ADDRESS", "")
+OFFRAMP_DEST_TAG = int(os.getenv("OFFRAMP_DEST_TAG", "0"))
 
+# Auth
+JWT_SECRET = os.getenv("JWT_SECRET", "jwt-dev")
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "24"))
+SECRET_KEY = os.getenv("APP_SECRET", "dev-secret")  # for HMAC challenges & VC
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer()
+
+app = FastAPI(title="XRPL Voucher APIs (Supabase + Face)", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ------------------------------
+# Supabase table wrapper (Dynamo-like)
+# ------------------------------
 class SupabaseTable:
     def __init__(self, client: Client, name: str):
         self.client = client
         self.name = name
 
     def get_item(self, Key: dict):
-        query = self.client.table(self.name).select("*")
+        q = self.client.table(self.name).select("*")
         for k, v in Key.items():
-            query = query.eq(k, v)
-        resp = query.single().execute()
+            q = q.eq(k, v)
+        resp = q.single().execute()
         return {"Item": resp.data}
 
     def put_item(self, Item: dict):
@@ -85,10 +141,10 @@ class SupabaseTable:
         elif ExpressionAttributeValues:
             for k, v in ExpressionAttributeValues.items():
                 updates[k.lstrip(":")] = v
-        query = self.client.table(self.name).update(updates)
+        q = self.client.table(self.name).update(updates)
         for k, v in Key.items():
-            query = query.eq(k, v)
-        query.execute()
+            q = q.eq(k, v)
+        q.execute()
 
     def scan(
         self,
@@ -98,78 +154,85 @@ class SupabaseTable:
         ProjectionExpression: Optional[str] = None,
     ):
         sel = "*" if not ProjectionExpression else ProjectionExpression
-        query = self.client.table(self.name).select(sel)
+        q = self.client.table(self.name).select(sel)
         if FilterExpression and ExpressionAttributeValues:
-            conditions = [c.strip() for c in FilterExpression.split("AND")]
-            for cond in conditions:
+            for cond in [c.strip() for c in FilterExpression.split("AND")]:
                 if "=" in cond:
                     attr, placeholder = [x.strip() for x in cond.split("=")]
                     if attr.startswith("#") and ExpressionAttributeNames:
                         attr = ExpressionAttributeNames.get(attr, attr)
                     val = ExpressionAttributeValues.get(placeholder)
-                    query = query.eq(attr, val)
-        resp = query.execute()
+                    q = q.eq(attr, val)
+        resp = q.execute()
         return {"Items": resp.data}
 
-
+# Tables
 TBL_ACCOUNTS = SupabaseTable(supabase, os.getenv("ACCOUNTS_TABLE", "accounts"))
 TBL_WALLETS = SupabaseTable(supabase, os.getenv("XRPL_WALLETS_TABLE", "xrpl_wallets"))
-TBL_RECIP_BAL = SupabaseTable(
-    supabase, os.getenv("RECIPIENT_BALANCES_TABLE", "recipient_balances")
-)
-TBL_STORE_METHODS = SupabaseTable(
-    supabase, os.getenv("STORE_PAYOUT_METHODS_TABLE", "store_payout_methods")
-)
+TBL_RECIP_BAL = SupabaseTable(supabase, os.getenv("RECIPIENT_BALANCES_TABLE", "recipient_balances"))
+TBL_STORE_METHODS = SupabaseTable(supabase, os.getenv("STORE_PAYOUT_METHODS_TABLE", "store_payout_methods"))
 TBL_PAYOUTS = SupabaseTable(supabase, os.getenv("PAYOUTS_TABLE", "payouts"))
-TBL_MOVES = SupabaseTable(
-    supabase, os.getenv("XRPL_MOVEMENTS_TABLE", "xrpl_movements")
-)
-
-# Credential tables
+TBL_MOVES = SupabaseTable(supabase, os.getenv("XRPL_MOVEMENTS_TABLE", "xrpl_movements"))
 TBL_ISSUERS = SupabaseTable(supabase, os.getenv("ISSUERS_TABLE", "issuers"))
 TBL_CREDS = SupabaseTable(supabase, os.getenv("CREDS_TABLE", "credentials"))
 TBL_REVOKE = SupabaseTable(supabase, os.getenv("REVOKE_TABLE", "revocations"))
-
-# NGO and financial tracking tables
 TBL_NGOS = SupabaseTable(supabase, os.getenv("NGOS_TABLE", "ngos"))
 TBL_PROGRAMS = SupabaseTable(supabase, os.getenv("PROGRAMS_TABLE", "programs"))
 TBL_DONATIONS = SupabaseTable(supabase, os.getenv("DONATIONS_TABLE", "donations"))
 TBL_EXPENSES = SupabaseTable(supabase, os.getenv("EXPENSES_TABLE", "expenses"))
 TBL_RECIPIENTS = SupabaseTable(supabase, os.getenv("RECIPIENTS_TABLE", "recipients"))
+TBL_FACE_MAPS = SupabaseTable(supabase, os.getenv("FACE_MAPS_TABLE", "face_maps"))
 
-# XRPL config (testnet by default)
-XRPL_RPC_URL = os.getenv("XRPL_RPC_URL", "https://s.altnet.rippletest.net:51234")
-XRPL_NETWORK = os.getenv("XRPL_NETWORK", "testnet")
+# ------------------------------
+# Helpers & Auth
+# ------------------------------
 
-# NGO hot wallet seed ONLY for test/dev. In prod use KMS/HSM signer.
-NGO_HOT_SEED = os.getenv("NGO_HOT_SEED")
-NGO_HOT_ADDRESS = os.getenv("NGO_HOT_ADDRESS")
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
-# Off-ramp partner config (placeholder)
-OFFRAMP_DEPOSIT_ADDRESS = os.getenv("OFFRAMP_DEPOSIT_ADDRESS", "rOffRampDepositAddr...")
-OFFRAMP_DEST_TAG = int(os.getenv("OFFRAMP_DEST_TAG", "12345"))
+def b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
-# Simple HMAC app secret for challenges (dev only)
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
+def sha256_hex(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
 
-# JWT and password hashing setup
-JWT_SECRET = os.getenv("JWT_SECRET", "jwt-secret-key")
-JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 24
-
+# Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+# JWT
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
 security = HTTPBearer()
 
-app = FastAPI(title="XRPL Voucher APIs", version="0.1.0")
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        ngo_id: str = payload.get("sub")
+        if not ngo_id:
+            raise HTTPException(401, "Invalid authentication credentials")
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(401, "Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(401, "Invalid token")
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+def get_current_ngo(token_data: dict = Depends(verify_token)) -> dict:
+    ngo_id = token_data.get("sub")
+    ngo = TBL_NGOS.get_item(Key={"ngo_id": ngo_id}).get("Item")
+    if not ngo:
+        raise HTTPException(404, "NGO not found")
+    return ngo
 
 # ------------------------------
 # Models
@@ -185,12 +248,12 @@ class WalletLinkStart(BaseModel):
 
 class WalletLinkConfirm(BaseModel):
     address: str
-    signature: str  # signature over challenge string (client-side signing)
+    signature: str
 
 class QuoteRequest(BaseModel):
-    from_currency: str = Field(..., examples=["XRP"])  # logical from (e.g., XRP)
-    to_currency: str = Field(..., examples=["PHP"])
-    amount_minor: conint(gt=0)  # integer minor units of from_currency
+    from_currency: str = Field(..., examples=["XRP"])  # logical from
+    to_currency: str = Field(..., examples=["PHP"])    # to fiat
+    amount_minor: conint(gt=0)
 
 class RedeemBody(BaseModel):
     voucher_id: str
@@ -198,7 +261,7 @@ class RedeemBody(BaseModel):
     recipient_id: str
     program_id: str
     amount_minor: conint(gt=0)
-    currency: str  # program currency (e.g., USD or PHP)
+    currency: str
 
 class StorePayoutMethod(BaseModel):
     method: Literal["bank_transfer", "mobile_money"]
@@ -211,12 +274,11 @@ class StorePayoutBody(BaseModel):
     amount_minor: conint(gt=0)
     currency: str
 
-# Credentials
 Role = Literal["NGO", "STORE", "RECIPIENT", "DONOR"]
 class VCIssue(BaseModel):
     issuer_did: str
-    subject_wallet: Optional[str] = None  # optional for STORE if wallet-less
-    subject_id: Optional[str] = None      # store_id / recipient_id / ngo_id
+    subject_wallet: Optional[str] = None
+    subject_id: Optional[str] = None
     role: Role
     program_id: Optional[str] = None
     ttl_minutes: int = 365*24*60
@@ -227,7 +289,6 @@ class VCVerify(BaseModel):
 class VCRevoke(BaseModel):
     credential_id: str
 
-# NGO Authentication Models
 class NGORegister(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8)
@@ -247,7 +308,6 @@ class Token(BaseModel):
     ngo_id: str
     organization_name: str
 
-# Recipient Models
 class RecipientCreate(BaseModel):
     name: str
     location: str
@@ -270,7 +330,6 @@ class BalanceOperation(BaseModel):
     description: Optional[str] = None
     program_id: str
 
-# Financial Models
 class DonationCreate(BaseModel):
     donor_name: str
     donor_email: Optional[EmailStr] = None
@@ -288,44 +347,29 @@ class ExpenseCreate(BaseModel):
     recipient_id: Optional[str] = None
 
 # ------------------------------
-# Helpers
+# Challenges & Quotes & XRPL helpers
 # ------------------------------
 
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-def b64url(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
-
-def sha256_hex(b: bytes) -> str:
-    return hashlib.sha256(b).hexdigest()
-
-# Challenge helpers (recipient wallet link)
-
 def make_challenge(recipient_id: str, address: str) -> str:
-    msg = f"link:{recipient_id}:{address}:{int(time.time()//300)}"  # 5-min window bucket
+    msg = f"link:{recipient_id}:{address}:{int(time.time()//300)}"
     mac = hmac.new(SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()
     return f"{msg}:{mac}"
 
 def verify_challenge(signature: str, recipient_id: str, address: str) -> bool:
-    # In MVP we accept the HMAC itself as the "signature". For non-custodial, require real XRPL signature.
     expected = make_challenge(recipient_id, address)
     return hmac.compare_digest(signature, expected)
 
-# XRPL client (lazy)
 
 def xrpl_client() -> Optional[JsonRpcClient]:
     if not XRPL_AVAILABLE:
         return None
     return JsonRpcClient(XRPL_RPC_URL)
 
-# Placeholder pathfind (return fixed slippage guard)
 
 def get_quote(from_currency: str, to_currency: str, amount_minor: int) -> dict:
-    # In production: call XRPL pathfind and compute SendMax/DeliverMin
-    rate_ppm = 1000000  # 1:1 for placeholder
-    deliver_min = amount_minor  # naive
-    send_max = int(amount_minor * 1.003)  # +30 bps slippage
+    rate_ppm = 1_000_000
+    deliver_min = amount_minor
+    send_max = int(amount_minor * 1.003)
     return {
         "quote_id": str(uuid.uuid4()),
         "from_currency": from_currency,
@@ -337,78 +381,126 @@ def get_quote(from_currency: str, to_currency: str, amount_minor: int) -> dict:
         "expires_at": int(time.time()) + 180,
     }
 
-# XRPL payment submission (NGO hot wallet → off-ramp). Returns tx hash.
+
+def to_drops(xrp_minor: int) -> int:
+    return int(xrp_minor)
+
 
 def pay_offramp_on_xrpl(amount_drops: int, memos: Dict[str, str]) -> str:
     if not XRPL_AVAILABLE:
         return "tx_placeholder_hash_no_xrpl"
     if not NGO_HOT_SEED or not NGO_HOT_ADDRESS:
         raise HTTPException(500, "NGO hot wallet not configured")
-
     client = xrpl_client()
-    wallet = Wallet(seed=NGO_HOT_SEED, sequence=0)  # for dev only; use proper sequence mgmt
+    wallet = Wallet(seed=NGO_HOT_SEED, sequence=0)  # DEV ONLY
     memo_objs: List[Memo] = []
     for k, v in memos.items():
-        # XRPL memos require hex encoding
-        key_hex = v.encode().hex()
-        type_hex = k.encode().hex()
-        memo_objs.append(Memo(memo_data=key_hex, memo_type=type_hex))
-
-    tx = Payment(
-        account=NGO_HOT_ADDRESS,
-        destination=OFFRAMP_DEPOSIT_ADDRESS,
-        amount=str(amount_drops),
-        destination_tag=OFFRAMP_DEST_TAG,
-        memos=memo_objs,
-    )
+        memo_objs.append(Memo(memo_data=v.encode().hex(), memo_type=k.encode().hex()))
+    dest = OFFRAMP_DEPOSIT_ADDRESS or NGO_HOT_ADDRESS
+    tx = Payment(account=NGO_HOT_ADDRESS, destination=dest, amount=str(amount_drops), destination_tag=OFFRAMP_DEST_TAG or None, memos=memo_objs)
     resp = safe_sign_and_submit_transaction(tx, client, wallet)
     return resp.result.get("tx_json", {}).get("hash", "")
 
-# Minor helpers
+# ------------------------------
+# Facial recognition endpoints
+# ------------------------------
 
-def to_drops(xrp_minor: int) -> int:
-    """Treat minor units as drops for XRP in MVP (1 minor == 1 drop)."""
-    return int(xrp_minor)
+def _img_bytes_to_ndarray(data: bytes):
+    import cv2
+    arr = np.frombuffer(data, dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if img is None:
+        raise HTTPException(400, "Invalid image file")
+    return img
 
-# Authentication helpers
 
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+def _best_face_embedding(img) -> Tuple[np.ndarray, dict]:
+    appf = get_face_app()
+    if appf is None:
+        raise HTTPException(503, "InsightFace not available on server")
+    faces = appf.get(img)
+    if not faces:
+        raise HTTPException(400, "No face detected")
+    def area(f):
+        x1, y1, x2, y2 = f.bbox.astype(int)
+        return max(0, x2 - x1) * max(0, y2 - y1)
+    faces.sort(key=area, reverse=True)
+    f0 = faces[0]
+    emb = getattr(f0, "normed_embedding", None)
+    if emb is None:
+        vec = f0.embedding.astype(np.float32)
+        n = np.linalg.norm(vec) + 1e-12
+        emb = (vec / n).astype(np.float32)
+    meta = {"bbox": f0.bbox.tolist(), "det_score": float(getattr(f0, "det_score", 0))}
+    return emb, meta
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
 
-def create_access_token(data: dict) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return encoded_jwt
+def _cosine(a: np.ndarray, b: np.ndarray) -> float:
+    return float(np.dot(a, b))
 
-def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        ngo_id: str = payload.get("sub")
-        if ngo_id is None:
-            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+@app.post("/face/enroll", tags=["face"])
+async def face_enroll(
+    account_id: str = Form(...),
+    file: UploadFile = File(...),
+    current_ngo: dict = Depends(get_current_ngo),
+):
+    if not FACE_AVAILABLE:
+        return {"note": "InsightFace not installed on server"}
+    data = await file.read()
+    img = _img_bytes_to_ndarray(data)
+    emb, meta = _best_face_embedding(img)
 
-def get_current_ngo(token_data: dict = Depends(verify_token)) -> dict:
-    ngo_id = token_data.get("sub")
-    try:
-        ngo = TBL_NGOS.get_item(Key={"ngo_id": ngo_id}).get("Item")
-        if not ngo:
-            raise HTTPException(status_code=404, detail="NGO not found")
-        return ngo
-    except ClientError:
-        raise HTTPException(status_code=500, detail="Database error")
+    row = {
+        "face_id": str(uuid.uuid4()),
+        "account_id": account_id,
+        "ngo_id": current_ngo["ngo_id"],
+        "embedding": json.dumps([float(x) for x in emb.tolist()]),
+        "model": "buffalo_l",
+        "meta": json.dumps(meta),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    TBL_FACE_MAPS.put_item(Item=row)
+    return {"face_id": row["face_id"], "account_id": account_id}
+
+@app.post("/face/identify", tags=["face"])
+async def face_identify(
+    file: UploadFile = File(...),
+    top_k: int = 3,
+    threshold: float = 0.40,
+    current_ngo: dict = Depends(get_current_ngo),
+):
+    if not FACE_AVAILABLE:
+        return {"note": "InsightFace not installed on server"}
+    data = await file.read()
+    img = _img_bytes_to_ndarray(data)
+    emb_query, _ = _best_face_embedding(img)
+
+    resp = TBL_FACE_MAPS.scan(
+        FilterExpression="ngo_id = :ngo",
+        ExpressionAttributeValues={":ngo": current_ngo["ngo_id"]}
+    )
+    items = resp.get("Items", []) or []
+
+    scored = []
+    for it in items:
+        try:
+            e = np.asarray(json.loads(it.get("embedding", "[]")), dtype=np.float32)
+            if e.size != emb_query.size:
+                continue
+            score = _cosine(emb_query, e)
+            scored.append({"account_id": it.get("account_id"), "face_id": it.get("face_id"), "score": score})
+        except Exception:
+            continue
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    top = scored[: max(1, top_k)]
+    if not top or top[0]["score"] < threshold:
+        return {"matches": []}
+    return {"matches": top}
 
 # ------------------------------
-# Accounts & recipient balances
+# Accounts & Recipients
 # ------------------------------
 @app.post("/accounts", tags=["accounts"])
 def create_account(body: AccountCreate):
@@ -421,15 +513,10 @@ def create_account(body: AccountCreate):
     })
     return {"account_id": account_id}
 
-# ------------------------------
-# Recipients Management (NGO Dashboard)
-# ------------------------------
 @app.post("/ngo/recipients", tags=["ngo", "recipients"])
 def create_recipient(body: RecipientCreate, current_ngo: dict = Depends(get_current_ngo)):
-    """Create a new aid recipient"""
     recipient_id = str(uuid.uuid4())
     ngo_id = current_ngo["ngo_id"]
-    
     TBL_RECIPIENTS.put_item(Item={
         "recipient_id": recipient_id,
         "ngo_id": ngo_id,
@@ -443,187 +530,89 @@ def create_recipient(body: RecipientCreate, current_ngo: dict = Depends(get_curr
         "created_at": now_iso(),
         "updated_at": now_iso(),
     })
-    
-    # Initialize balance at 0
     TBL_RECIP_BAL.put_item(Item={
         "recipient_id": recipient_id,
         "program_id": body.program_id,
         "amount_minor": 0,
         "last_updated": now_iso(),
     })
-    
     return {"recipient_id": recipient_id, "status": "created"}
 
 @app.get("/ngo/recipients", tags=["ngo", "recipients"])
 def list_recipients(current_ngo: dict = Depends(get_current_ngo), search: Optional[str] = None):
-    """List all recipients for the NGO"""
     ngo_id = current_ngo["ngo_id"]
-    
-    try:
-        recipients_resp = TBL_RECIPIENTS.scan(
-            FilterExpression="ngo_id = :ngo_id",
-            ExpressionAttributeValues={":ngo_id": ngo_id}
-        )
-        recipients = recipients_resp.get("Items", [])
-        
-        # Add balance information
-        enriched_recipients = []
-        for recipient in recipients:
-            # Get balance
-            balance_resp = TBL_RECIP_BAL.get_item(
-                Key={"recipient_id": recipient["recipient_id"], "program_id": recipient["program_id"]}
-            )
-            balance = balance_resp.get("Item", {}).get("amount_minor", 0)
-            
-            recipient_data = {
-                **recipient,
-                "wallet_balance": balance
-            }
-            enriched_recipients.append(recipient_data)
-        
-        # Apply search filter if provided
-        if search:
-            search_lower = search.lower()
-            enriched_recipients = [
-                r for r in enriched_recipients
-                if search_lower in r.get("name", "").lower() or
-                   search_lower in r.get("location", "").lower() or
-                   search_lower in r.get("category", "").lower()
-            ]
-        
-        return {"recipients": enriched_recipients, "count": len(enriched_recipients)}
-        
-    except ClientError as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    recipients = TBL_RECIPIENTS.scan(
+        FilterExpression="ngo_id = :ngo",
+        ExpressionAttributeValues={":ngo": ngo_id}
+    ).get("Items", [])
+    enriched = []
+    for r in recipients:
+        bal = TBL_RECIP_BAL.get_item(Key={"recipient_id": r["recipient_id"], "program_id": r["program_id"]}).get("Item", {})
+        r["wallet_balance"] = bal.get("amount_minor", 0)
+        enriched.append(r)
+    if search:
+        s = search.lower()
+        enriched = [x for x in enriched if s in x.get("name", "").lower() or s in x.get("location", "").lower() or s in x.get("category", "").lower()]
+    return {"recipients": enriched, "count": len(enriched)}
 
 @app.get("/ngo/recipients/{recipient_id}", tags=["ngo", "recipients"])
 def get_recipient(recipient_id: str, current_ngo: dict = Depends(get_current_ngo)):
-    """Get a specific recipient"""
     ngo_id = current_ngo["ngo_id"]
-    
-    try:
-        recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
-        if not recipient or recipient.get("ngo_id") != ngo_id:
-            raise HTTPException(status_code=404, detail="Recipient not found")
-        
-        # Get balance
-        balance_resp = TBL_RECIP_BAL.get_item(
-            Key={"recipient_id": recipient_id, "program_id": recipient["program_id"]}
-        )
-        balance = balance_resp.get("Item", {}).get("amount_minor", 0)
-        
-        return {**recipient, "wallet_balance": balance}
-        
-    except ClientError as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    r = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
+    if not r or r.get("ngo_id") != ngo_id:
+        raise HTTPException(404, "Recipient not found")
+    bal = TBL_RECIP_BAL.get_item(Key={"recipient_id": recipient_id, "program_id": r["program_id"]}).get("Item", {})
+    r["wallet_balance"] = bal.get("amount_minor", 0)
+    return r
 
 @app.put("/ngo/recipients/{recipient_id}", tags=["ngo", "recipients"])
 def update_recipient(recipient_id: str, body: RecipientUpdate, current_ngo: dict = Depends(get_current_ngo)):
-    """Update a recipient"""
     ngo_id = current_ngo["ngo_id"]
-    
-    try:
-        # Verify recipient belongs to NGO
-        recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
-        if not recipient or recipient.get("ngo_id") != ngo_id:
-            raise HTTPException(status_code=404, detail="Recipient not found")
-        
-        # Build update expression
-        update_expr = "SET updated_at = :updated_at"
-        expr_values = {":updated_at": now_iso()}
-        
-        if body.name is not None:
-            update_expr += ", #name = :name"
-            expr_values[":name"] = body.name
-        if body.location is not None:
-            update_expr += ", #location = :location"
-            expr_values[":location"] = body.location
-        if body.category is not None:
-            update_expr += ", category = :category"
-            expr_values[":category"] = body.category
-        if body.phone is not None:
-            update_expr += ", phone = :phone"
-            expr_values[":phone"] = body.phone
-        if body.email is not None:
-            update_expr += ", email = :email"
-            expr_values[":email"] = body.email
-        if body.status is not None:
-            update_expr += ", #status = :status"
-            expr_values[":status"] = body.status
-        
-        expr_names = {"#name": "name", "#location": "location", "#status": "status"}
-        
-        TBL_RECIPIENTS.update_item(
-            Key={"recipient_id": recipient_id},
-            UpdateExpression=update_expr,
-            ExpressionAttributeValues=expr_values,
-            ExpressionAttributeNames=expr_names
-        )
-        
-        return {"status": "updated"}
-        
-    except ClientError as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    rec = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
+    if not rec or rec.get("ngo_id") != ngo_id:
+        raise HTTPException(404, "Recipient not found")
+    update_expr = "SET updated_at = :u"
+    vals = {":u": now_iso()}
+    names = {}
+    if body.name is not None:
+        update_expr += ", #n = :n"; vals[":n"] = body.name; names["#n"] = "name"
+    if body.location is not None:
+        update_expr += ", #l = :l"; vals[":l"] = body.location; names["#l"] = "location"
+    if body.category is not None:
+        update_expr += ", category = :c"; vals[":c"] = body.category
+    if body.phone is not None:
+        update_expr += ", phone = :p"; vals[":p"] = body.phone
+    if body.email is not None:
+        update_expr += ", email = :e"; vals[":e"] = body.email
+    if body.status is not None:
+        update_expr += ", #s = :s"; vals[":s"] = body.status; names["#s"] = "status"
+    TBL_RECIPIENTS.update_item(Key={"recipient_id": recipient_id}, UpdateExpression=update_expr, ExpressionAttributeValues=vals, ExpressionAttributeNames=names)
+    return {"status": "updated"}
 
 @app.post("/ngo/recipients/{recipient_id}/balance", tags=["ngo", "recipients"])
 def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_ngo: dict = Depends(get_current_ngo)):
-    """Deposit or withdraw funds from recipient balance"""
-    ngo_id = current_ngo["ngo_id"]
-    
-    try:
-        # Verify recipient belongs to NGO
-        recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
-        if not recipient or recipient.get("ngo_id") != ngo_id:
-            raise HTTPException(status_code=404, detail="Recipient not found")
-        
-        # Get current balance
-        balance_resp = TBL_RECIP_BAL.get_item(
-            Key={"recipient_id": recipient_id, "program_id": body.program_id}
-        )
-        current_balance = balance_resp.get("Item", {}).get("amount_minor", 0)
-        
-        if body.operation_type == "withdraw" and current_balance < body.amount_minor:
-            raise HTTPException(status_code=400, detail="Insufficient balance")
-        
-        # Calculate new balance
-        if body.operation_type == "deposit":
-            new_balance = current_balance + body.amount_minor
-        else:  # withdraw
-            new_balance = current_balance - body.amount_minor
-        
-        # Update balance
-        TBL_RECIP_BAL.update_item(
-            Key={"recipient_id": recipient_id, "program_id": body.program_id},
-            UpdateExpression="SET amount_minor = :new_balance, last_updated = :updated",
-            ExpressionAttributeValues={
-                ":new_balance": new_balance,
-                ":updated": now_iso()
-            }
-        )
-        
-        # Record as expense if deposit
-        if body.operation_type == "deposit":
-            TBL_EXPENSES.put_item(Item={
-                "expense_id": str(uuid.uuid4()),
-                "ngo_id": ngo_id,
-                "category": "Aid Distribution",
-                "amount_minor": body.amount_minor,
-                "currency": "USD",
-                "program_id": body.program_id,
-                "description": body.description or f"Deposit to {recipient['name']}",
-                "recipient_id": recipient_id,
-                "created_at": now_iso(),
-            })
-        
-        return {
-            "previous_balance": current_balance,
-            "new_balance": new_balance,
-            "operation": body.operation_type,
-            "amount": body.amount_minor
-        }
-        
-    except ClientError as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    rec = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
+    if not rec or rec.get("ngo_id") != current_ngo["ngo_id"]:
+        raise HTTPException(404, "Recipient not found")
+    bal = TBL_RECIP_BAL.get_item(Key={"recipient_id": recipient_id, "program_id": body.program_id}).get("Item") or {"amount_minor": 0}
+    cur = int(bal.get("amount_minor", 0))
+    if body.operation_type == "withdraw" and cur < body.amount_minor:
+        raise HTTPException(400, "Insufficient balance")
+    new_bal = cur + body.amount_minor if body.operation_type == "deposit" else cur - body.amount_minor
+    TBL_RECIP_BAL.update_item(Key={"recipient_id": recipient_id, "program_id": body.program_id}, UpdateExpression="SET amount_minor = :n, last_updated = :t", ExpressionAttributeValues={":n": new_bal, ":t": now_iso()})
+    if body.operation_type == "deposit":
+        TBL_EXPENSES.put_item(Item={
+            "expense_id": str(uuid.uuid4()),
+            "ngo_id": current_ngo["ngo_id"],
+            "category": "Aid Distribution",
+            "amount_minor": body.amount_minor,
+            "currency": "USD",
+            "program_id": body.program_id,
+            "description": body.description or f"Deposit to {rec['name']}",
+            "recipient_id": recipient_id,
+            "created_at": now_iso(),
+        })
+    return {"previous_balance": cur, "new_balance": new_bal, "operation": body.operation_type, "amount": body.amount_minor}
 
 @app.get("/recipients/{recipient_id}/balance", tags=["recipients"])
 def get_recipient_balance(recipient_id: str, program_id: str):
@@ -631,12 +620,11 @@ def get_recipient_balance(recipient_id: str, program_id: str):
     return r or {"recipient_id": recipient_id, "program_id": program_id, "amount_minor": 0}
 
 # ------------------------------
-# Recipient wallet link (optional non-custodial)
+# Wallet link (optional non-custodial)
 # ------------------------------
 @app.post("/recipients/{recipient_id}/wallet-link/start", tags=["recipients"])
 def wallet_link_start(recipient_id: str, body: WalletLinkStart):
-    challenge = make_challenge(recipient_id, body.address)
-    return {"challenge": challenge}
+    return {"challenge": make_challenge(recipient_id, body.address)}
 
 @app.post("/recipients/{recipient_id}/wallet-link/confirm", tags=["recipients"])
 def wallet_link_confirm(recipient_id: str, body: WalletLinkConfirm):
@@ -656,33 +644,20 @@ def wallet_link_confirm(recipient_id: str, body: WalletLinkConfirm):
     return {"wallet_id": wallet_id, "address": body.address}
 
 # ------------------------------
-# Quotes
+# Quotes & Redeem & Payouts
 # ------------------------------
 @app.post("/quotes", tags=["quotes"])
 def create_quote(body: QuoteRequest):
-    q = get_quote(body.from_currency, body.to_currency, body.amount_minor)
-    return q
+    return get_quote(body.from_currency, body.to_currency, body.amount_minor)
 
-# ------------------------------
-# Redeem (store has no wallet; payout via off-ramp)
-# ------------------------------
 @app.post("/redeem", tags=["redeem"])
 def redeem(body: RedeemBody):
-    # 1) Load recipient balance
     bal = TBL_RECIP_BAL.get_item(Key={"recipient_id": body.recipient_id, "program_id": body.program_id}).get("Item")
     if not bal or bal.get("amount_minor", 0) < body.amount_minor:
         raise HTTPException(400, "Insufficient balance")
-
-    # 2) Policy checks would be here (caps, category, geo, hours, credentials)
-
-    # 3) Get quote for NGO hot → off-ramp (simplified to same-currency XRP in MVP)
     quote = get_quote("XRP", body.currency, body.amount_minor)
-
-    # 4) XRPL payment to off-ramp (amount as drops in MVP)
     memos = {"voucher_id": body.voucher_id, "store_id": body.store_id, "program_id": body.program_id}
     tx_hash = pay_offramp_on_xrpl(to_drops(body.amount_minor), memos)
-
-    # 5) Record payout and movement; debit recipient balance
     payout_id = str(uuid.uuid4())
     TBL_PAYOUTS.put_item(Item={
         "payout_id": payout_id,
@@ -696,19 +671,11 @@ def redeem(body: RedeemBody):
         "status": "processing",
         "created_at": now_iso(),
     })
-
-    # Debit balance (optimistic)
-    TBL_RECIP_BAL.update_item(
-        Key={"recipient_id": body.recipient_id, "program_id": body.program_id},
-        UpdateExpression="SET amount_minor = amount_minor - :amt",
-        ExpressionAttributeValues={":amt": body.amount_minor},
-    )
-
-    # Movement index (optional minimal)
+    TBL_RECIP_BAL.update_item(Key={"recipient_id": body.recipient_id, "program_id": body.program_id}, UpdateExpression="SET amount_minor = amount_minor - :a", ExpressionAttributeValues={":a": body.amount_minor})
     if tx_hash:
         TBL_MOVES.put_item(Item={
             "tx_hash": tx_hash,
-            "classic_address": NGO_HOT_ADDRESS or "ngo_hot_unknown",
+            "classic_address": (NGO_HOT_ADDRESS or "ngo_hot_unknown"),
             "direction": "out",
             "delivered_currency": "XRP",
             "delivered_minor": to_drops(body.amount_minor),
@@ -716,33 +683,15 @@ def redeem(body: RedeemBody):
             "validated_ledger": 0,
             "occurred_at": now_iso(),
         })
+    return {"payout_id": payout_id, "store_currency": body.currency, "amount_minor": body.amount_minor, "quote": quote, "xrpl_tx_hash": tx_hash, "status": "processing"}
 
-    return {
-        "payout_id": payout_id,
-        "store_currency": body.currency,
-        "amount_minor": body.amount_minor,
-        "quote": quote,
-        "xrpl_tx_hash": tx_hash,
-        "status": "processing",
-    }
-
-# ------------------------------
-# Store payout methods & manual payouts (batch/console)
-# ------------------------------
 @app.put("/stores/{store_id}/payout-method", tags=["stores"])
 def upsert_store_payout_method(store_id: str, body: StorePayoutMethod):
-    TBL_STORE_METHODS.put_item(Item={
-        "store_id": store_id,
-        "method": body.method,
-        "currency": body.currency,
-        "detail": body.detail,
-        "updated_at": now_iso(),
-    })
+    TBL_STORE_METHODS.put_item(Item={"store_id": store_id, "method": body.method, "currency": body.currency, "detail": body.detail, "updated_at": now_iso()})
     return {"ok": True}
 
 @app.post("/payouts", tags=["payouts"])
 def create_payout(body: StorePayoutBody):
-    # This mimics redeem() but without a voucher/recipient, used for batch settlements
     quote = get_quote("XRP", body.currency, body.amount_minor)
     memos = {"voucher_id": "batch", "store_id": body.store_id, "program_id": body.program_id}
     tx_hash = pay_offramp_on_xrpl(to_drops(body.amount_minor), memos)
@@ -763,16 +712,13 @@ def create_payout(body: StorePayoutBody):
 
 @app.get("/stores/{store_id}/payouts", tags=["stores"])
 def list_store_payouts(store_id: str):
-    # In a real design, payouts table should use a GSI on store_id for efficient queries. Here we scan for brevity.
-    resp = TBL_PAYOUTS.scan()
-    items = [p for p in resp.get("Items", []) if p.get("store_id") == store_id]
+    res = TBL_PAYOUTS.scan()
+    items = [p for p in res.get("Items", []) if p.get("store_id") == store_id]
     return {"items": items}
 
 # ------------------------------
-# Credential issuing (VC-JWT minimal, HMAC signing for dev)
+# Credentials (VC-JWT, HS256 dev)
 # ------------------------------
-# For dev: we sign JWT with HMAC-SHA256 using SECRET_KEY. In prod: swap to ES256K with KMS.
-
 class HS256Signer:
     @staticmethod
     def sign(header: dict, payload: dict) -> str:
@@ -784,8 +730,7 @@ class HS256Signer:
 
 @app.post("/credentials/issue", tags=["credentials"])
 def issue_vc(body: VCIssue):
-    iat = int(time.time())
-    exp = iat + body.ttl_minutes * 60
+    iat = int(time.time()); exp = iat + body.ttl_minutes * 60
     credential_id = f"urn:vc:{uuid.uuid4()}"
     payload = {
         "jti": credential_id,
@@ -807,7 +752,6 @@ def issue_vc(body: VCIssue):
     }
     header = {"alg": "HS256", "typ": "JWT", "kid": f"{body.issuer_did}#keys-1"}
     jwt_compact = HS256Signer.sign(header, payload)
-
     TBL_CREDS.put_item(Item={
         "credential_id": credential_id,
         "issuer_did": body.issuer_did,
@@ -820,9 +764,9 @@ def issue_vc(body: VCIssue):
     return {"credential_id": credential_id, "jwt": jwt_compact, "expires_at": exp}
 
 @app.post("/credentials/verify", tags=["credentials"])
-def verify_vc(body: VCVerify):
+def verify_vc(jwt_token: VCVerify):
     try:
-        header_b64, payload_b64, sig_b64 = body.jwt.split(".")
+        header_b64, payload_b64, sig_b64 = jwt_token.jwt.split(".")
         to_sign = f"{header_b64}.{payload_b64}".encode()
         sig = base64.urlsafe_b64decode(sig_b64 + "==")
         calc = hmac.new(SECRET_KEY.encode(), to_sign, hashlib.sha256).digest()
@@ -831,62 +775,40 @@ def verify_vc(body: VCVerify):
         payload = json.loads(base64.urlsafe_b64decode(payload_b64 + "=="))
     except Exception:
         raise HTTPException(400, "Malformed JWT")
-
-    # Revocation check
     jti = payload.get("jti")
     rv = TBL_REVOKE.get_item(Key={"credential_id": jti}).get("Item")
     if rv:
         raise HTTPException(401, "Credential revoked")
-
-    now = int(time.time())
-    if now < payload.get("nbf", 0):
+    now_ts = int(time.time())
+    if now_ts < payload.get("nbf", 0):
         raise HTTPException(401, "Not yet valid")
-    if now >= payload.get("exp", 0):
+    if now_ts >= payload.get("exp", 0):
         raise HTTPException(401, "Expired")
-
     return {"valid": True, "payload": payload}
 
 @app.post("/credentials/revoke", tags=["credentials"])
 def revoke_vc(body: VCRevoke):
     TBL_REVOKE.put_item(Item={"credential_id": body.credential_id, "revoked_at": now_iso()})
     try:
-        TBL_CREDS.update_item(
-            Key={"credential_id": body.credential_id},
-            UpdateExpression="SET #s = :rev",
-            ExpressionAttributeNames={"#s": "status"},
-            ExpressionAttributeValues={":rev": "revoked"},
-        )
-    except ClientError:
+        TBL_CREDS.update_item(Key={"credential_id": body.credential_id}, UpdateExpression="SET #s = :r", ExpressionAttributeNames={"#s": "status"}, ExpressionAttributeValues={":r": "revoked"})
+    except Exception:
         pass
     return {"ok": True}
 
 # ------------------------------
-# NGO Authentication
+# NGO Auth & Dashboard
 # ------------------------------
 @app.post("/auth/register", tags=["auth"], response_model=Token)
 def register_ngo(body: NGORegister):
-    """Register a new NGO organization"""
-    # Check if email already exists
-    try:
-        existing = TBL_NGOS.scan(
-            FilterExpression="email = :email",
-            ExpressionAttributeValues={":email": body.email}
-        ).get("Items", [])
-        if existing:
-            raise HTTPException(status_code=400, detail="Email already registered")
-    except ClientError:
-        pass
-    
+    existing = TBL_NGOS.scan(FilterExpression="email = :e", ExpressionAttributeValues={":e": body.email}).get("Items", [])
+    if existing:
+        raise HTTPException(400, "Email already registered")
     ngo_id = str(uuid.uuid4())
-    hashed_password = hash_password(body.password)
-    
-    # Create default program
     program_id = str(uuid.uuid4())
-    
     TBL_NGOS.put_item(Item={
         "ngo_id": ngo_id,
         "email": body.email,
-        "password_hash": hashed_password,
+        "password_hash": hash_password(body.password),
         "organization_name": body.organization_name,
         "contact_name": body.contact_name,
         "phone": body.phone,
@@ -896,8 +818,6 @@ def register_ngo(body: NGORegister):
         "default_program_id": program_id,
         "created_at": now_iso(),
     })
-    
-    # Create default program
     TBL_PROGRAMS.put_item(Item={
         "program_id": program_id,
         "ngo_id": ngo_id,
@@ -907,192 +827,82 @@ def register_ngo(body: NGORegister):
         "status": "active",
         "created_at": now_iso(),
     })
-    
-    access_token = create_access_token({"sub": ngo_id, "email": body.email})
-    
-    return Token(
-        access_token=access_token,
-        token_type="bearer",
-        ngo_id=ngo_id,
-        organization_name=body.organization_name
-    )
+    token = create_access_token({"sub": ngo_id, "email": body.email})
+    return Token(access_token=token, token_type="bearer", ngo_id=ngo_id, organization_name=body.organization_name)
 
 @app.post("/auth/login", tags=["auth"], response_model=Token)
 def login_ngo(body: NGOLogin):
-    """Login an existing NGO"""
-    try:
-        ngos = TBL_NGOS.scan(
-            FilterExpression="email = :email",
-            ExpressionAttributeValues={":email": body.email}
-        ).get("Items", [])
-        
-        if not ngos:
-            raise HTTPException(status_code=401, detail="Invalid email or password")
-        
-        ngo = ngos[0]
-        
-        if not verify_password(body.password, ngo["password_hash"]):
-            raise HTTPException(status_code=401, detail="Invalid email or password")
-        
-        if ngo.get("status") != "active":
-            raise HTTPException(status_code=401, detail="Account is not active")
-        
-        access_token = create_access_token({"sub": ngo["ngo_id"], "email": ngo["email"]})
-        
-        return Token(
-            access_token=access_token,
-            token_type="bearer",
-            ngo_id=ngo["ngo_id"],
-            organization_name=ngo["organization_name"]
-        )
-        
-    except ClientError:
-        raise HTTPException(status_code=500, detail="Database error")
+    ngos = TBL_NGOS.scan(FilterExpression="email = :e", ExpressionAttributeValues={":e": body.email}).get("Items", [])
+    if not ngos:
+        raise HTTPException(401, "Invalid email or password")
+    ngo = ngos[0]
+    if not verify_password(body.password, ngo["password_hash"]):
+        raise HTTPException(401, "Invalid email or password")
+    if ngo.get("status") != "active":
+        raise HTTPException(401, "Account is not active")
+    token = create_access_token({"sub": ngo["ngo_id"], "email": ngo["email"]})
+    return Token(access_token=token, token_type="bearer", ngo_id=ngo["ngo_id"], organization_name=ngo["organization_name"])
 
 @app.get("/auth/me", tags=["auth"])
 def get_current_user(current_ngo: dict = Depends(get_current_ngo)):
-    """Get current NGO profile"""
-    # Remove sensitive data
-    safe_ngo = {k: v for k, v in current_ngo.items() if k != "password_hash"}
-    return safe_ngo
+    return {k: v for k, v in current_ngo.items() if k != "password_hash"}
 
-# ------------------------------
-# NGO Dashboard APIs
-# ------------------------------
 @app.get("/ngo/dashboard/stats", tags=["ngo"])
 def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
-    """Get NGO dashboard statistics"""
     ngo_id = current_ngo["ngo_id"]
-    
-    try:
-        # Count active recipients
-        recipients_resp = TBL_RECIPIENTS.scan(
-            FilterExpression="ngo_id = :ngo_id AND #status = :status",
-            ExpressionAttributeNames={"#status": "status"},
-            ExpressionAttributeValues={":ngo_id": ngo_id, ":status": "active"}
-        )
-        active_recipients = len(recipients_resp.get("Items", []))
-        
-        # Calculate total donations (last 30 days)
-        thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        donations_resp = TBL_DONATIONS.scan(
-            FilterExpression="ngo_id = :ngo_id AND created_at > :date",
-            ExpressionAttributeValues={":ngo_id": ngo_id, ":date": thirty_days_ago}
-        )
-        total_donations = sum(item.get("amount_minor", 0) for item in donations_resp.get("Items", []))
-        
-        # Calculate total expenses (last 30 days)
-        expenses_resp = TBL_EXPENSES.scan(
-            FilterExpression="ngo_id = :ngo_id AND created_at > :date",
-            ExpressionAttributeValues={":ngo_id": ngo_id, ":date": thirty_days_ago}
-        )
-        total_expenses = sum(item.get("amount_minor", 0) for item in expenses_resp.get("Items", []))
-        
-        # Calculate available funds
-        available_funds = total_donations - total_expenses
-        
-        return {
-            "active_recipients": active_recipients,
-            "total_donations_30d": total_donations,
-            "total_expenses_30d": total_expenses,
-            "available_funds": available_funds,
-            "utilization_rate": (total_expenses / total_donations * 100) if total_donations > 0 else 0,
-            "last_updated": now_iso()
-        }
-        
-    except ClientError as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    # active recipients
+    recs = TBL_RECIPIENTS.scan(FilterExpression="ngo_id = :n AND #s = :a", ExpressionAttributeNames={"#s": "status"}, ExpressionAttributeValues={":n": ngo_id, ":a": "active"}).get("Items", [])
+    active_recipients = len(recs)
+    # last 30d sums
+    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    dons = TBL_DONATIONS.scan(FilterExpression="ngo_id = :n AND created_at > :t", ExpressionAttributeValues={":n": ngo_id, ":t": since}).get("Items", [])
+    exps = TBL_EXPENSES.scan(FilterExpression="ngo_id = :n AND created_at > :t", ExpressionAttributeValues={":n": ngo_id, ":t": since}).get("Items", [])
+    total_donations = sum(int(d.get("amount_minor", 0)) for d in dons)
+    total_expenses = sum(int(e.get("amount_minor", 0)) for e in exps)
+    return {
+        "active_recipients": active_recipients,
+        "total_donations_30d": total_donations,
+        "total_expenses_30d": total_expenses,
+        "available_funds": total_donations - total_expenses,
+        "utilization_rate": (total_expenses / total_donations * 100) if total_donations > 0 else 0,
+        "last_updated": now_iso(),
+    }
 
 @app.get("/ngo/dashboard/expense-breakdown", tags=["ngo"])
 def get_expense_breakdown(current_ngo: dict = Depends(get_current_ngo)):
-    """Get expense breakdown by category"""
     ngo_id = current_ngo["ngo_id"]
-    
-    try:
-        # Get expenses from last 30 days
-        thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        expenses_resp = TBL_EXPENSES.scan(
-            FilterExpression="ngo_id = :ngo_id AND created_at > :date",
-            ExpressionAttributeValues={":ngo_id": ngo_id, ":date": thirty_days_ago}
-        )
-        
-        # Group by category
-        category_totals = {}
-        for expense in expenses_resp.get("Items", []):
-            category = expense.get("category", "Other")
-            amount = expense.get("amount_minor", 0)
-            category_totals[category] = category_totals.get(category, 0) + amount
-        
-        # Format for frontend
-        expense_data = [
-            {"name": category, "value": amount}
-            for category, amount in category_totals.items()
-        ]
-        
-        return {"expense_breakdown": expense_data}
-        
-    except ClientError as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    exps = TBL_EXPENSES.scan(FilterExpression="ngo_id = :n AND created_at > :t", ExpressionAttributeValues={":n": ngo_id, ":t": since}).get("Items", [])
+    buckets: Dict[str, int] = {}
+    for e in exps:
+        cat = e.get("category", "Other"); amt = int(e.get("amount_minor", 0))
+        buckets[cat] = buckets.get(cat, 0) + amt
+    return {"expense_breakdown": [{"name": k, "value": v} for k, v in buckets.items()]}
 
 @app.get("/ngo/dashboard/monthly-trends", tags=["ngo"])
 def get_monthly_trends(current_ngo: dict = Depends(get_current_ngo)):
-    """Get monthly donation and expense trends"""
     ngo_id = current_ngo["ngo_id"]
-    
-    try:
-        # Get last 6 months of data
-        six_months_ago = datetime.now(timezone.utc) - timedelta(days=180)
-        
-        # Get donations
-        donations_resp = TBL_DONATIONS.scan(
-            FilterExpression="ngo_id = :ngo_id AND created_at > :date",
-            ExpressionAttributeValues={":ngo_id": ngo_id, ":date": six_months_ago.isoformat()}
-        )
-        
-        # Get expenses
-        expenses_resp = TBL_EXPENSES.scan(
-            FilterExpression="ngo_id = :ngo_id AND created_at > :date",
-            ExpressionAttributeValues={":ngo_id": ngo_id, ":date": six_months_ago.isoformat()}
-        )
-        
-        # Group by month
-        monthly_data = {}
-        for i in range(6):
-            month_date = datetime.now(timezone.utc) - timedelta(days=30*i)
-            month_key = month_date.strftime("%b")
-            monthly_data[month_key] = {"donations": 0, "expenses": 0}
-        
-        # Process donations
-        for donation in donations_resp.get("Items", []):
-            created_at = datetime.fromisoformat(donation["created_at"].replace("Z", "+00:00"))
-            month_key = created_at.strftime("%b")
-            if month_key in monthly_data:
-                monthly_data[month_key]["donations"] += donation.get("amount_minor", 0)
-        
-        # Process expenses
-        for expense in expenses_resp.get("Items", []):
-            created_at = datetime.fromisoformat(expense["created_at"].replace("Z", "+00:00"))
-            month_key = created_at.strftime("%b")
-            if month_key in monthly_data:
-                monthly_data[month_key]["expenses"] += expense.get("amount_minor", 0)
-        
-        # Format for frontend
-        trends = [
-            {"month": month, **data}
-            for month, data in monthly_data.items()
-        ]
-        
-        return {"monthly_trends": trends}
-        
-    except ClientError as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    since = (datetime.now(timezone.utc) - timedelta(days=180)).isoformat()
+    dons = TBL_DONATIONS.scan(FilterExpression="ngo_id = :n AND created_at > :t", ExpressionAttributeValues={":n": ngo_id, ":t": since}).get("Items", [])
+    exps = TBL_EXPENSES.scan(FilterExpression="ngo_id = :n AND created_at > :t", ExpressionAttributeValues={":n": ngo_id, ":t": since}).get("Items", [])
+    months = {}
+    for i in range(6):
+        key = (datetime.now(timezone.utc) - timedelta(days=30*i)).strftime("%b")
+        months[key] = {"donations": 0, "expenses": 0}
+    for d in dons:
+        k = datetime.fromisoformat(d["created_at"].replace("Z", "+00:00")).strftime("%b")
+        if k in months: months[k]["donations"] += int(d.get("amount_minor", 0))
+    for e in exps:
+        k = datetime.fromisoformat(e["created_at"].replace("Z", "+00:00")).strftime("%b")
+        if k in months: months[k]["expenses"] += int(e.get("amount_minor", 0))
+    return {"monthly_trends": [{"month": m, **v} for m, v in months.items()]}
 
 # ------------------------------
-# Health
+# Meta
 # ------------------------------
 @app.get("/healthz", tags=["meta"])
 def healthz():
-    return {"ok": True, "xrpl": XRPL_AVAILABLE, "network": XRPL_NETWORK}
+    return {"ok": True, "xrpl": XRPL_AVAILABLE, "face": FACE_AVAILABLE, "network": XRPL_NETWORK}
 
 if __name__ == "__main__":
     import uvicorn
