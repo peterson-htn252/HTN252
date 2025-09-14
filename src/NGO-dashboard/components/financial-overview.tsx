@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress"
 import { DollarSign, TrendingUp, TrendingDown, AlertCircle, Loader2 } from "lucide-react"
 import { apiClient } from "@/lib/api"
 import { DashboardStats } from "@/lib/types"
+import { formatCurrency } from "@/lib/utils"
 
 
 export function FinancialOverview() {
@@ -137,7 +138,7 @@ export function FinancialOverview() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">${totalAvailable.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-foreground">${formatCurrency(totalAvailable)}</div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
               <TrendingUp className="w-3 h-3 text-green-600" />
               <span>Available for distribution</span>
@@ -151,7 +152,7 @@ export function FinancialOverview() {
             <TrendingDown className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">${totalExpenses.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-foreground">${formatCurrency(totalExpenses)}</div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
               <span>From auditor records</span>
             </div>
@@ -164,9 +165,9 @@ export function FinancialOverview() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">${lifetimeDonations.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-foreground">${formatCurrency(lifetimeDonations)}</div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-              <span>Goal: ${goal.toLocaleString()}</span>
+              <span>Goal: ${formatCurrency(goal)}</span>
               {goal > 0 && (
                 <span className="ml-2">({fundUtilizationRate.toFixed(1)}% of goal)</span>
               )}
