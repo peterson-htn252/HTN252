@@ -73,7 +73,6 @@ class SupabaseTable:
 
 TBL_ACCOUNTS = SupabaseTable(supabase, os.getenv("ACCOUNTS_TABLE", "accounts"))
 TBL_WALLETS = SupabaseTable(supabase, os.getenv("XRPL_WALLETS_TABLE", "xrpl_wallets"))
-TBL_RECIP_BAL = SupabaseTable(supabase, os.getenv("RECIPIENT_BALANCES_TABLE", "recipient_balances"))
 TBL_STORE_METHODS = SupabaseTable(supabase, os.getenv("STORE_PAYOUT_METHODS_TABLE", "store_payout_methods"))
 TBL_PAYOUTS = SupabaseTable(supabase, os.getenv("PAYOUTS_TABLE", "payouts"))
 TBL_MOVES = SupabaseTable(supabase, os.getenv("XRPL_MOVEMENTS_TABLE", "xrpl_movements"))
@@ -85,4 +84,5 @@ TBL_PROGRAMS = SupabaseTable(supabase, os.getenv("PROGRAMS_TABLE", "programs"))
 TBL_DONATIONS = SupabaseTable(supabase, os.getenv("DONATIONS_TABLE", "donations"))
 TBL_EXPENSES = SupabaseTable(supabase, os.getenv("EXPENSES_TABLE", "expenses"))
 TBL_RECIPIENTS = SupabaseTable(supabase, os.getenv("RECIPIENTS_TABLE", "recipients"))
+TBL_NGO_EXPENSES = SupabaseTable(supabase, os.getenv("NGO_EXPENSES_TABLE", "ngo_expense"))
 TBL_FACE_MAPS = SupabaseTable(supabase, os.getenv("FACE_MAPS_TABLE", "face_maps"))
