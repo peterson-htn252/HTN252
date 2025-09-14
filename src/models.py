@@ -11,7 +11,7 @@ class AccountCreate(BaseModel):
     email: str
     password: str
     ngo_id: Optional[str] = None
-    goal: Optional[str] = None
+    goal: Optional[int] = None
     description: Optional[str] = None
 
 
@@ -57,6 +57,10 @@ class StorePayoutBody(BaseModel):
     currency: str
 
 
+class WalletBalanceUSDRequest(BaseModel):
+    public_key: str
+
+
 Role = Literal["NGO", "STORE", "RECIPIENT", "DONOR"]
 
 
@@ -82,7 +86,7 @@ class NGORegister(BaseModel):
     password: str = Field(..., min_length=8)
     organization_name: str
     contact_name: str
-    goal: str
+    goal: int
     description: str
 
 
@@ -109,7 +113,7 @@ class NGOAccountSummary(BaseModel):
     account_id: str
     name: str
     description: str
-    goal: str
+    goal: int
     status: str
     lifetime_donations: int
     created_at: str
@@ -118,26 +122,28 @@ class NGOAccountSummary(BaseModel):
 class RecipientCreate(BaseModel):
     name: str
     location: str
-    category: str = Field(..., examples=["Family Aid", "Medical Support", "Education", "Emergency Relief"])
-    phone: Optional[str] = None
-    email: Optional[EmailStr] = None
-    program_id: str
 
 
 class RecipientUpdate(BaseModel):
     name: Optional[str] = None
     location: Optional[str] = None
-    category: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[EmailStr] = None
-    status: Optional[Literal["active", "pending", "inactive"]] = None
+
+
+class RecipientResponse(BaseModel):
+    recipient_id: str
+    ngo_id: str
+    name: str
+    location: str
+    balance: float = 0.0
+    public_key: str
+    private_key: str
+    created_at: str
 
 
 class BalanceOperation(BaseModel):
-    amount_minor: conint(gt=0)
+    amount: float = Field(gt=0, description="Amount in major currency units")
     operation_type: Literal["deposit", "withdraw"]
     description: Optional[str] = None
-    program_id: str
 
 
 class DonationCreate(BaseModel):

@@ -2,7 +2,13 @@ import {
   AuthToken, 
   LoginRequest, 
   RegisterRequest,
-  NGO
+  NGO,
+  DashboardStats,
+  Recipient,
+  RecipientCreate,
+  BalanceOperation,
+  WalletBalanceUSDResponse,
+  BalanceOperationResponse
 } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -111,10 +117,11 @@ class APIClient {
       name: string;
       email: string;
       ngo_id?: string;
-      goal?: string;
+      goal?: number | string;
       description?: string;
       status: string;
       created_at: string;
+      public_key: string;
     }>('/accounts/me');
     
     // Transform account data to match NGO interface
@@ -123,18 +130,49 @@ class APIClient {
       email: account.email,
       organization_name: account.name,
       contact_name: account.name, // Use name as contact_name for now
-      goal: account.goal || '',
+      goal: typeof account.goal === 'number' ? account.goal : Number(account.goal ?? 0),
       description: account.description || '',
       status: account.status as 'active' | 'inactive',
       created_at: account.created_at,
-      default_program_id: account.ngo_id || ''
+      default_program_id: account.ngo_id || '',
+      public_key: account.public_key,
     };
     
     return ngo;
   }
 
-  // Note: Dashboard and recipient methods removed as endpoints were deleted
-  // If you need these features, the corresponding backend endpoints need to be recreated
+  // Dashboard methods
+  async getDashboardStats(): Promise<DashboardStats> {
+    return this.request<DashboardStats>('/accounts/dashboard/stats');
+  }
+
+  async getWalletBalanceUSD(publicKey: string): Promise<WalletBalanceUSDResponse> {
+    return this.request<WalletBalanceUSDResponse>('/wallets/balance-usd', {
+      method: 'POST',
+      body: JSON.stringify({ public_key: publicKey })
+    });
+  }
+
+
+  // Recipients methods
+  async getRecipients(search?: string): Promise<{ recipients: Recipient[]; count: number }> {
+    const params = search ? `?search=${encodeURIComponent(search)}` : '';
+    return this.request<{ recipients: Recipient[]; count: number }>(`/accounts/recipients${params}`);
+  }
+
+  async createRecipient(recipientData: RecipientCreate): Promise<{ recipient_id: string; status: string }> {
+    return this.request<{ recipient_id: string; status: string }>('/accounts/recipients', {
+      method: 'POST',
+      body: JSON.stringify(recipientData),
+    });
+  }
+
+  async updateRecipientBalance(recipientId: string, operation: BalanceOperation): Promise<BalanceOperationResponse> {
+    return this.request<BalanceOperationResponse>(`/accounts/recipients/${recipientId}/balance`, {
+      method: 'POST',
+      body: JSON.stringify(operation),
+    });
+  }
 
   // Health check
   async healthCheck(): Promise<{ ok: boolean; xrpl: boolean; network: string }> {
