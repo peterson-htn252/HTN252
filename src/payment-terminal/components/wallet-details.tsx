@@ -6,7 +6,7 @@ import { Wallet } from "lucide-react"
 
 interface WalletDetailsProps {
   walletInfo: {
-    accountId: string
+    recipientId: string
     publicKey: string
     balanceUsd?: number
     recipientBalance?: number
@@ -24,8 +24,8 @@ export function WalletDetails({ walletInfo }: WalletDetailsProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">Account ID</p>
-          <p className="font-mono break-all text-xs">{walletInfo.accountId}</p>
+          <p className="text-sm text-muted-foreground">Recipient ID</p>
+          <p className="font-mono break-all text-xs">{walletInfo.recipientId}</p>
         </div>
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">Public Key</p>
