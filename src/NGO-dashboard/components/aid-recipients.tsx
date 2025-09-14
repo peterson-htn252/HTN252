@@ -56,24 +56,28 @@ export function AidRecipients() {
   const { toast } = useToast()
   const { user } = useAuth()
 
-  // Fetch recipients data
+  // Fetch recipients data with debounce for smoother searching
   useEffect(() => {
     const fetchRecipients = async () => {
       try {
         setIsLoading(true)
         setError(null)
-        
+
         const response = await apiClient.getRecipients(searchTerm || undefined)
         const transformedRecipients = response.recipients.map(transformRecipient)
         setRecipients(transformedRecipients)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load recipients')
+        setError(err instanceof Error ? err.message : "Failed to load recipients")
       } finally {
         setIsLoading(false)
       }
     }
 
-    fetchRecipients()
+    const handler = setTimeout(() => {
+      fetchRecipients()
+    }, 300)
+
+    return () => clearTimeout(handler)
   }, [searchTerm])
 
   const filteredRecipients = recipients.filter(
@@ -180,7 +184,7 @@ export function AidRecipients() {
   }
 
 
-  if (isLoading) {
+  if (isLoading && recipients.length === 0) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
