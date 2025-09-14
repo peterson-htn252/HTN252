@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Shield } from "lucide-react"
@@ -8,44 +8,82 @@ import { DonationForm } from "./donation-form"
 import { ImpactDashboard } from "./impact-dashboard"
 import { BlockchainTracker } from "./blockchain-tracker"
 import { AuditTrail } from "./audit-trail"
+import { supabaseBrowser } from "@/lib/supabase-browser"
+import type { Donation, ImpactDataDB, ImpactDataUI } from "@/types/donations"
 
-// Mock data for demonstration
-const mockDonations = [
-  {
-    id: "1",
-    amount: 100,
-    program: "Typhoon Relief Program",
-    date: "2024-01-15",
-    blockchainId: "0x1a2b3c4d5e6f7890abcdef1234567890",
-    status: "distributed",
-    recipients: 5,
-    location: "Philippines",
-  },
-  {
-    id: "2",
-    amount: 250,
-    program: "Earthquake Emergency Fund",
-    date: "2024-01-10",
-    blockchainId: "0x9876543210fedcba0987654321abcdef",
-    status: "in-progress",
-    recipients: 12,
-    location: "Turkey",
-  },
-]
-
-const mockImpactData = {
-  totalDonated: 146000,
-  peopleHelped: 555,
-  programsSupported: 3,
-  transparencyScore: 98,
-}
+const toUI = (d: ImpactDataDB): ImpactDataUI => ({
+  totalDonated: d.total_donated ?? 0,
+  peopleHelped: d.people_helped ?? 0,
+  programsSupported: d.programs_supported ?? 0,
+  transparencyScore: d.transparency_score ?? 0,
+})
 
 export function DonorDashboard() {
-  const [donations, setDonations] = useState(mockDonations)
-  const [impactData, setImpactData] = useState(mockImpactData)
+  const [donations, setDonations] = useState<Donation[] | null>(null)
+  const [impactDB, setImpactDB] = useState<ImpactDataDB | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const supabase = useMemo(() => supabaseBrowser(), [])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+
+      // donations
+      const { data: d, error: dErr } = await supabase
+        .from("donations")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(100)
+
+      if (!cancelled) {
+        if (dErr) console.error(dErr)
+        else setDonations(d as Donation[])
+      }
+
+      // impact view (single row)
+      const { data: i, error: iErr } = await supabase
+        .from("impact_dashboard")
+        .select("*")
+        .single()
+
+      if (!cancelled) {
+        if (iErr) console.error(iErr)
+        else setImpactDB(i as ImpactDataDB)
+        setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [supabase])
+
+  // realtime on donations
+  useEffect(() => {
+    const channel = supabase
+      .channel("donations-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "donations" },
+        async (payload) => {
+          setDonations((prev) => {
+            const list = prev ? [...prev] : []
+            const row = payload.new as Donation
+            const idx = list.findIndex((d) => d.id === row.id)
+            if (idx >= 0) list[idx] = row
+            else list.unshift(row)
+            return list
+          })
+          // refresh impact view
+          const { data } = await supabase.from("impact_dashboard").select("*").single()
+          if (data) setImpactDB(data as ImpactDataDB)
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [supabase])
 
   const handleDonationComplete = (donationId: string, blockchainId: string) => {
-    // In a real app, this would update the donations list and impact data
     console.log("Donation completed:", { donationId, blockchainId })
   }
 
@@ -78,34 +116,44 @@ export function DonorDashboard() {
           </p>
         </div>
 
-        <Tabs defaultValue="donate" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="donate">Donate</TabsTrigger>
-            <TabsTrigger value="track">Blockchain Tracker</TabsTrigger>
-            <TabsTrigger value="impact">Impact Dashboard</TabsTrigger>
-            <TabsTrigger value="audit">Audit Trail</TabsTrigger>
-          </TabsList>
+        {loading ? (
+          <div className="text-center text-muted-foreground">Loading dashboard…</div>
+        ) : (
+          <Tabs defaultValue="donate" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="donate">Donate</TabsTrigger>
+              <TabsTrigger value="track">Blockchain Tracker</TabsTrigger>
+              <TabsTrigger value="impact">Impact Dashboard</TabsTrigger>
+              <TabsTrigger value="audit">Audit Trail</TabsTrigger>
+            </TabsList>
 
-          {/* Donation Tab */}
-          <TabsContent value="donate" className="space-y-6">
-            <DonationForm onDonationComplete={handleDonationComplete} />
-          </TabsContent>
+            {/* Donation Tab */}
+            <TabsContent value="donate" className="space-y-6">
+              <DonationForm onDonationComplete={handleDonationComplete} />
+            </TabsContent>
 
-          {/* Track Donations Tab */}
-          <TabsContent value="track" className="space-y-6">
-            <BlockchainTracker />
-          </TabsContent>
+            {/* Track Donations Tab */}
+            <TabsContent value="track" className="space-y-6">
+              <BlockchainTracker donations={donations ?? []} />
+            </TabsContent>
 
-          {/* Impact Dashboard Tab */}
-          <TabsContent value="impact" className="space-y-6">
-            <ImpactDashboard impactData={impactData} />
-          </TabsContent>
+            {/* Impact Dashboard Tab */}
+            <TabsContent value="impact" className="space-y-6">
+              <ImpactDashboard
+                impactData={
+                  impactDB
+                    ? toUI(impactDB)
+                    : { totalDonated: 0, peopleHelped: 0, programsSupported: 0, transparencyScore: 0 }
+                }
+              />
+            </TabsContent>
 
-          {/* Audit Trail Tab */}
-          <TabsContent value="audit" className="space-y-6">
-            <AuditTrail />
-          </TabsContent>
-        </Tabs>
+            {/* Audit Trail Tab */}
+            <TabsContent value="audit" className="space-y-6">
+              <AuditTrail donations={donations ?? []} />
+            </TabsContent>
+          </Tabs>
+        )}
       </div>
     </div>
   )
