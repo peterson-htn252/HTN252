@@ -5,7 +5,12 @@ import uuid, json
 
 from core.face import get_face_app, FACE_AVAILABLE
 from core.auth import get_current_ngo
-from core.database import TBL_FACE_MAPS, TBL_PENDING_FACE_MAPS, TBL_RECIPIENTS
+from core.database import (
+    TBL_FACE_MAPS,
+    TBL_PENDING_FACE_MAPS,
+    TBL_RECIPIENTS,
+    TBL_ACCOUNTS,
+)
 from core.utils import now_iso
 
 router = APIRouter()
@@ -317,6 +322,15 @@ async def face_identify_batch(
             "model": "buffalo_l",
             "debug": {"mismatched_dims": int(mismatched)},
         }
+
+    for m in top:
+        try:
+            acc = TBL_ACCOUNTS.get_item(Key={"account_id": m["account_id"]}).get("Item")
+            if acc:
+                m["public_key"] = acc.get("public_key")
+                m["name"] = acc.get("name")
+        except Exception:
+            continue
 
     return {
         "frames_used": int(frames_used),
