@@ -28,8 +28,6 @@ We provide a Ripple based donation and voucher distribution platform where
 **Donor Dashboard - Stripe Payment**
 ![Donor Dashboard](/img/rrss5.png)
 
-**Donor Dashboard - Successfu Payment**
-![Donor Dashboard](/img/rrss7.png)
 
 **Merchant Dashboard**
 ![Biometric Face Scan](/img/image-8.png)
