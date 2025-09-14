@@ -14,6 +14,7 @@ goal              DOUBLE PRECISION (float8)       NULL
 lifetime_donations REAL (float4)                  NULL
 public_key        TEXT                            NULL
 private_key       TEXT                            NULL
+address           TEXT                            NOT NULL
 --------------------------------------------------------------
 
 Table: credentials
@@ -74,6 +75,7 @@ public_key       TEXT                               NOT NULL
 private_key      TEXT                               NOT NULL
 created_at       TIMESTAMPTZ (with time zone)       DEFAULT now()
 verified         BOOLEAN                            DEFAULT false
+address          TEXT                               NOT NULL
 --------------------------------------------------------------
 
 Table: revocations
