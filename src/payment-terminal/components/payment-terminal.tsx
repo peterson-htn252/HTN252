@@ -64,7 +64,7 @@ export function PaymentTerminal() {
       }
     }
 
-    const interval = currentStep === "idle" ? setInterval(checkForTransaction, 2000) : null
+    const interval = currentStep === "idle" ? setInterval(checkForTransaction, 500) : null
 
     return () => {
       if (interval) clearInterval(interval)
