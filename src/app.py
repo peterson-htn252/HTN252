@@ -7,7 +7,7 @@ FastAPI APIs for NGO voucher system on XRPL (wallet-less stores)
 
 Notes:
 - Replace XRPL + KMS placeholders with your actual implementations for production
-- DynamoDB tables are assumed created as per earlier messages; env var names below
+- Supabase tables are assumed created as per earlier messages; env var names below
 - Error handling/logging kept concise for brevity
 """
 
@@ -21,8 +21,7 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Literal, List, Dict
 
-import boto3
-from botocore.exceptions import ClientError
+from supabase import create_client, Client
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,29 +41,101 @@ except Exception:
     XRPL_AVAILABLE = False
 
 # ------------------------------
-# ENV & AWS clients
+# ENV & Supabase client
 # ------------------------------
-REGION = os.getenv("AWS_REGION", "us-east-2")
-dynamodb = boto3.resource("dynamodb", region_name=REGION)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-TBL_ACCOUNTS = dynamodb.Table(os.getenv("ACCOUNTS_TABLE", "accounts"))
-TBL_WALLETS = dynamodb.Table(os.getenv("XRPL_WALLETS_TABLE", "xrpl_wallets"))
-TBL_RECIP_BAL = dynamodb.Table(os.getenv("RECIPIENT_BALANCES_TABLE", "recipient_balances"))
-TBL_STORE_METHODS = dynamodb.Table(os.getenv("STORE_PAYOUT_METHODS_TABLE", "store_payout_methods"))
-TBL_PAYOUTS = dynamodb.Table(os.getenv("PAYOUTS_TABLE", "payouts"))
-TBL_MOVES = dynamodb.Table(os.getenv("XRPL_MOVEMENTS_TABLE", "xrpl_movements"))
+ClientError = Exception
+
+
+class SupabaseTable:
+    def __init__(self, client: Client, name: str):
+        self.client = client
+        self.name = name
+
+    def get_item(self, Key: dict):
+        query = self.client.table(self.name).select("*")
+        for k, v in Key.items():
+            query = query.eq(k, v)
+        resp = query.single().execute()
+        return {"Item": resp.data}
+
+    def put_item(self, Item: dict):
+        self.client.table(self.name).insert(Item).execute()
+
+    def update_item(
+        self,
+        Key: dict,
+        UpdateExpression: str = "",
+        ExpressionAttributeValues: Optional[Dict[str, object]] = None,
+        ExpressionAttributeNames: Optional[Dict[str, str]] = None,
+    ):
+        updates: Dict[str, object] = {}
+        if UpdateExpression and ExpressionAttributeValues:
+            expr = UpdateExpression.replace("SET", "").strip()
+            parts = [p.strip() for p in expr.split(",")]
+            for part in parts:
+                if "=" in part:
+                    field, value_key = [s.strip() for s in part.split("=")]
+                    if field.startswith("#") and ExpressionAttributeNames:
+                        field = ExpressionAttributeNames.get(field, field)
+                    updates[field] = ExpressionAttributeValues.get(value_key)
+        elif ExpressionAttributeValues:
+            for k, v in ExpressionAttributeValues.items():
+                updates[k.lstrip(":")] = v
+        query = self.client.table(self.name).update(updates)
+        for k, v in Key.items():
+            query = query.eq(k, v)
+        query.execute()
+
+    def scan(
+        self,
+        FilterExpression: Optional[str] = None,
+        ExpressionAttributeValues: Optional[Dict[str, object]] = None,
+        ExpressionAttributeNames: Optional[Dict[str, str]] = None,
+        ProjectionExpression: Optional[str] = None,
+    ):
+        sel = "*" if not ProjectionExpression else ProjectionExpression
+        query = self.client.table(self.name).select(sel)
+        if FilterExpression and ExpressionAttributeValues:
+            conditions = [c.strip() for c in FilterExpression.split("AND")]
+            for cond in conditions:
+                if "=" in cond:
+                    attr, placeholder = [x.strip() for x in cond.split("=")]
+                    if attr.startswith("#") and ExpressionAttributeNames:
+                        attr = ExpressionAttributeNames.get(attr, attr)
+                    val = ExpressionAttributeValues.get(placeholder)
+                    query = query.eq(attr, val)
+        resp = query.execute()
+        return {"Items": resp.data}
+
+
+TBL_ACCOUNTS = SupabaseTable(supabase, os.getenv("ACCOUNTS_TABLE", "accounts"))
+TBL_WALLETS = SupabaseTable(supabase, os.getenv("XRPL_WALLETS_TABLE", "xrpl_wallets"))
+TBL_RECIP_BAL = SupabaseTable(
+    supabase, os.getenv("RECIPIENT_BALANCES_TABLE", "recipient_balances")
+)
+TBL_STORE_METHODS = SupabaseTable(
+    supabase, os.getenv("STORE_PAYOUT_METHODS_TABLE", "store_payout_methods")
+)
+TBL_PAYOUTS = SupabaseTable(supabase, os.getenv("PAYOUTS_TABLE", "payouts"))
+TBL_MOVES = SupabaseTable(
+    supabase, os.getenv("XRPL_MOVEMENTS_TABLE", "xrpl_movements")
+)
 
 # Credential tables
-TBL_ISSUERS = dynamodb.Table(os.getenv("ISSUERS_TABLE", "issuers"))
-TBL_CREDS = dynamodb.Table(os.getenv("CREDS_TABLE", "credentials"))
-TBL_REVOKE = dynamodb.Table(os.getenv("REVOKE_TABLE", "revocations"))
+TBL_ISSUERS = SupabaseTable(supabase, os.getenv("ISSUERS_TABLE", "issuers"))
+TBL_CREDS = SupabaseTable(supabase, os.getenv("CREDS_TABLE", "credentials"))
+TBL_REVOKE = SupabaseTable(supabase, os.getenv("REVOKE_TABLE", "revocations"))
 
 # NGO and financial tracking tables
-TBL_NGOS = dynamodb.Table(os.getenv("NGOS_TABLE", "ngos"))
-TBL_PROGRAMS = dynamodb.Table(os.getenv("PROGRAMS_TABLE", "programs"))
-TBL_DONATIONS = dynamodb.Table(os.getenv("DONATIONS_TABLE", "donations"))
-TBL_EXPENSES = dynamodb.Table(os.getenv("EXPENSES_TABLE", "expenses"))
-TBL_RECIPIENTS = dynamodb.Table(os.getenv("RECIPIENTS_TABLE", "recipients"))
+TBL_NGOS = SupabaseTable(supabase, os.getenv("NGOS_TABLE", "ngos"))
+TBL_PROGRAMS = SupabaseTable(supabase, os.getenv("PROGRAMS_TABLE", "programs"))
+TBL_DONATIONS = SupabaseTable(supabase, os.getenv("DONATIONS_TABLE", "donations"))
+TBL_EXPENSES = SupabaseTable(supabase, os.getenv("EXPENSES_TABLE", "expenses"))
+TBL_RECIPIENTS = SupabaseTable(supabase, os.getenv("RECIPIENTS_TABLE", "recipients"))
 
 # XRPL config (testnet by default)
 XRPL_RPC_URL = os.getenv("XRPL_RPC_URL", "https://s.altnet.rippletest.net:51234")
