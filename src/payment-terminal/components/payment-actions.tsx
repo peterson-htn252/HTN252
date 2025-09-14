@@ -12,6 +12,7 @@ interface PaymentActionsProps {
   onStepChange: (step: string) => void
   onCheckout: () => void
   onPaymentComplete: () => void
+  onWalletConfirm: () => void
   transactionData: TransactionData | null
 }
 
@@ -20,6 +21,7 @@ export function PaymentActions({
   onStepChange,
   onCheckout,
   onPaymentComplete,
+  onWalletConfirm,
   transactionData,
 }: PaymentActionsProps) {
   const [progress, setProgress] = useState(0)
@@ -44,7 +46,7 @@ export function PaymentActions({
   }
 
   const handleCancel = () => {
-    onStepChange("vendor")
+    onStepChange("checkout")
     setProgress(0)
   }
 
@@ -77,6 +79,18 @@ export function PaymentActions({
               Cancel
             </Button>
           </div>
+        )
+
+      case "wallet":
+        return (
+          <Button
+            onClick={onWalletConfirm}
+            className="w-full h-12 text-lg font-semibold"
+            size="lg"
+          >
+            <CreditCard className="w-5 h-5 mr-2" />
+            Confirm Payment
+          </Button>
         )
 
       case "processing":

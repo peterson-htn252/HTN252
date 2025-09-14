@@ -3,11 +3,12 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { CameraView } from "@/components/camera-view"
+import { CameraView, type VerificationResult } from "@/components/camera-view"
 import { TransactionSummary } from "@/components/transaction-summary"
 import { PaymentActions } from "@/components/payment-actions"
 import { PaymentAccepted } from "@/components/payment-accepted"
 import { CustomerIdleScreen } from "@/components/customer-idle-screen"
+import { WalletDetails } from "@/components/wallet-details"
 import { CreditCard, Shield, Clock } from "lucide-react"
 
 export interface CheckoutItem {
@@ -24,12 +25,23 @@ export interface TransactionData {
   transactionId?: string
 }
 
-type TerminalStep = "idle" | "checkout" | "verification" | "processing" | "accepted"
+type TerminalStep =
+  | "idle"
+  | "checkout"
+  | "verification"
+  | "wallet"
+  | "processing"
+  | "accepted"
 
 export function PaymentTerminal() {
   const [currentStep, setCurrentStep] = useState<TerminalStep>("idle")
   const [transactionData, setTransactionData] = useState<TransactionData | null>(null)
   const [vendorName, setVendorName] = useState("Block Terminal")
+  const [walletInfo, setWalletInfo] = useState<{
+    accountId: string
+    publicKey: string
+    balanceUsd?: number
+  } | null>(null)
 
   useEffect(() => {
     const checkForTransaction = async () => {
@@ -66,11 +78,39 @@ export function PaymentTerminal() {
     setTimeout(() => {
       setCurrentStep("idle")
       setTransactionData(null)
+      setWalletInfo(null)
     }, 3000)
   }
 
   const handleCheckout = () => {
     setCurrentStep("verification")
+  }
+
+  const handleVerificationResult = async (result: VerificationResult) => {
+    if (result.success && result.publicKey && result.accountId) {
+      try {
+        const res = await fetch("http://localhost:8000/wallets/balance-usd", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ public_key: result.publicKey }),
+        })
+        const data = await res.json().catch(() => ({}))
+        setWalletInfo({
+          accountId: result.accountId,
+          publicKey: result.publicKey,
+          balanceUsd: data.balance_usd,
+        })
+      } catch {
+        setWalletInfo({ accountId: result.accountId, publicKey: result.publicKey })
+      }
+      setCurrentStep("wallet")
+    } else {
+      setCurrentStep("checkout")
+    }
+  }
+
+  const handleWalletConfirm = () => {
+    setCurrentStep("processing")
   }
 
   if (currentStep === "idle") {
@@ -115,7 +155,7 @@ export function PaymentTerminal() {
                 <CardTitle className="flex items-center gap-2">Customer Verification</CardTitle>
               </CardHeader>
               <CardContent>
-                <CameraView currentStep={currentStep} onVerificationComplete={() => setCurrentStep("processing")} />
+                <CameraView currentStep={currentStep} onVerificationComplete={handleVerificationResult} />
               </CardContent>
             </Card>
           </div>
@@ -123,12 +163,14 @@ export function PaymentTerminal() {
 
         <div className={`space-y-6 ${currentStep === "verification" ? "" : "lg:col-span-3"}`}>
           {transactionData && <TransactionSummary transactionData={transactionData} currentStep={currentStep} />}
+          {walletInfo && currentStep === "wallet" && <WalletDetails walletInfo={walletInfo} />}
 
           <PaymentActions
             currentStep={currentStep}
             onStepChange={setCurrentStep}
             onCheckout={handleCheckout}
             onPaymentComplete={handlePaymentComplete}
+            onWalletConfirm={handleWalletConfirm}
             transactionData={transactionData}
           />
         </div>
