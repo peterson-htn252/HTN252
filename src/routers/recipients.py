@@ -33,11 +33,13 @@ def create_recipient(body: RecipientCreate, current_ngo: dict = Depends(get_curr
     ngo_id = current_ngo["ngo_id"]
     
     # Generate XRPL wallet keys
-    from core.xrpl import create_new_wallet
+    from core.xrpl import create_new_wallet, derive_address_from_public_key
     try:
         wallet_keys = create_new_wallet()
         public_key = wallet_keys["public_key"]
         private_key = wallet_keys["private_key"]
+        # Derive the address from the public key
+        address = derive_address_from_public_key(public_key)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {str(e)}")
     
@@ -50,6 +52,7 @@ def create_recipient(body: RecipientCreate, current_ngo: dict = Depends(get_curr
         "balance": 0.0,
         "public_key": public_key,
         "private_key": private_key,
+        "address": address,
         "created_at": now_iso(),
     }
     
