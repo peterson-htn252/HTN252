@@ -88,7 +88,14 @@ export function AidRecipients() {
   )
 
   const handleDeposit = async () => {
-    if (!selectedRecipient || !depositAmount || !user) return
+    if (!selectedRecipient || !depositAmount || !user) {
+      toast({
+        title: "Invalid Request",
+        description: "Please select a recipient and enter a valid amount.",
+        variant: "destructive",
+      })
+      return
+    }
 
     const amount = Number.parseFloat(depositAmount)
     if (isNaN(amount) || amount <= 0) {
@@ -374,7 +381,7 @@ export function AidRecipients() {
                   <DialogHeader>
                     <DialogTitle className="text-foreground">Deposit Money</DialogTitle>
                     <DialogDescription className="text-muted-foreground">
-                      Add funds to {recipient.name}'s wallet. Current balance: ${formatCurrency(selectedRecipient.walletBalance)}
+                      Add funds to {recipient.name}'s wallet. Current balance: ${formatCurrency(selectedRecipient?.walletBalance ?? recipient.walletBalance)}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
