@@ -120,9 +120,9 @@ def derive_address_from_public_key(public_key: str) -> Optional[str]:
 
 def fetch_xrp_balance_drops(classic_address: str) -> Optional[int]:
     if not XRPL_AVAILABLE or not AccountInfo:
-        # For development/testing, return a mock balance
+        # In development, treat unfunded accounts as having zero balance
         if classic_address and classic_address.startswith("r"):
-            return 10000000000  # 10,000 XRP in drops for testing
+            return 0
         return None
     client = xrpl_client()
     if not client:
@@ -132,9 +132,9 @@ def fetch_xrp_balance_drops(classic_address: str) -> Optional[int]:
         resp = client.request(req).result
         return int(resp["account_data"]["Balance"])  # drops
     except Exception:
-        # For development/testing, return a mock balance if address looks valid
+        # If the account cannot be retrieved (e.g. unfunded), report zero balance
         if classic_address and classic_address.startswith("r"):
-            return 10000000000  # 10,000 XRP in drops for testing
+            return 0
         return None
 
 
