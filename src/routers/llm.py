@@ -31,6 +31,97 @@ class SummarizeReq(BaseModel):
     temperature: Optional[float] = Field(0.3, ge=0.0, le=1.0)
     country: Optional[str] = Field(None, description="Optional hint for disambiguation")
 
+class EinLookupReq(BaseModel):
+    organization: str = Field(..., min_length=2)
+    state: str | None = Field(None, description="Optional 2-letter US state filter, e.g. 'CA'")
+
+@router.post("/ein")
+def lookup_ein(payload: EinLookupReq, limit: int = Query(5, ge=1, le=25)):
+    """
+    Look up EINs by organization name (no scraping).
+    1) ProPublica Nonprofit Explorer /search.json
+    2) Fallback: Wikidata P1297 via wbsearchentities + Special:EntityData
+    """
+    org = payload.organization.strip()
+    state = (payload.state or "").strip().upper()
+
+    # --- 1) ProPublica Nonprofit Explorer search ---
+    try:
+        params = {"q": org, "page": 0}
+        if state:
+            params["state[id]"] = state  # requests will url-encode the brackets
+        r = requests.get(
+            "https://projects.propublica.org/nonprofits/api/v2/search.json",
+            params=params,
+            timeout=HTTP_TIMEOUT,
+            headers={"User-Agent": WIKI_UA},
+        )
+        if r.status_code == 200:
+            j = r.json()
+            orgs = (j.get("organizations") or [])[:limit]
+            results = []
+            for o in orgs:
+                results.append({
+                    "name": o.get("name"),
+                    "ein": str(o.get("ein")) if o.get("ein") is not None else None,
+                    "strein": o.get("strein"),
+                    "city": o.get("city"),
+                    "state": o.get("state"),
+                    "ntee_code": o.get("ntee_code"),
+                    "subseccd": o.get("subseccd"),
+                    "guidestar_url": o.get("guidestar_url"),
+                    "nccs_url": o.get("nccs_url"),
+                    "propublica_org_url": f"https://projects.propublica.org/nonprofits/organizations/{o.get('ein')}" if o.get("ein") else None,
+                })
+            if results:
+                return {"source": "propublica", "results": results}
+    except Exception:
+        pass
+
+    # --- 2) Fallback: Wikidata (P1297 = EIN) ---
+    try:
+        # find QID by name
+        s = requests.get(
+            "https://www.wikidata.org/w/api.php",
+            params={
+                "action": "wbsearchentities",
+                "search": org,
+                "language": "en",
+                "format": "json",
+                "limit": 3,
+            },
+            headers={"User-Agent": WIKI_UA},
+            timeout=HTTP_TIMEOUT,
+        )
+        qid = None
+        if s.status_code == 200:
+            hits = s.json().get("search", [])
+            if hits:
+                qid = hits[0].get("id")
+
+        if qid:
+            ent = requests.get(
+                f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json",
+                headers={"User-Agent": WIKI_UA},
+                timeout=HTTP_TIMEOUT,
+            )
+            if ent.status_code == 200:
+                data = ent.json()
+                claims = data.get("entities", {}).get(qid, {}).get("claims", {})
+                # P1297 = EIN
+                if "P1297" in claims:
+                    ein = claims["P1297"][0]["mainsnak"]["datavalue"]["value"]
+                    # try to pick a label
+                    label = data.get("entities", {}).get(qid, {}).get("labels", {}).get("en", {}).get("value", org)
+                    return {
+                        "source": "wikidata",
+                        "results": [{"name": label, "ein": ein, "strein": None, "city": None, "state": None}],
+                    }
+    except Exception:
+        pass
+
+    return JSONResponse(status_code=404, content={"error": f"No EIN found for '{org}'"})
+
 # --------------------- Helpers (no scraping) ---------------------
 
 def wiki_search(title: str) -> Optional[str]:
