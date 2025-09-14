@@ -196,38 +196,14 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
         except Exception:
             active_recipients = 0
         
-        # Get donations and expenses for last 30 days
-        thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        
-        # Get donations and expenses - handle missing tables gracefully
-        try:
-            donations_resp = TBL_DONATIONS.scan(
-                FilterExpression="ngo_id = :ngo_id AND created_at > :date",
-                ExpressionAttributeValues={":ngo_id": ngo_id, ":date": thirty_days_ago},
-            )
-            total_donations = sum(item.get("amount_minor", 0) for item in donations_resp.get("Items", []))
-        except Exception:
-            total_donations = 500000  # Mock data: $5000 in donations
-        
-        try:
-            expenses_resp = TBL_EXPENSES.scan(
-                FilterExpression="ngo_id = :ngo_id AND created_at > :date",
-                ExpressionAttributeValues={":ngo_id": ngo_id, ":date": thirty_days_ago},
-            )
-            total_expenses = sum(item.get("amount_minor", 0) for item in expenses_resp.get("Items", []))
-        except Exception:
-            total_expenses = 200000  # Mock data: $2000 in expenses
-        
-        # Get total NGO expenses from the ngo_expense table
+        # Get total NGO expenses from the auditor table (external audit source)
         try:
             ngo_expense_resp = TBL_NGO_EXPENSES.get_item(Key={"ngo_id": ngo_id})
-            total_ngo_expenses = int((ngo_expense_resp.get("Item", {}).get("expenses", 0.0)) * 100)  # Convert to minor units
+            total_expenses = int((ngo_expense_resp.get("Item", {}).get("expenses", 0.0)) * 100)  # Convert to minor units
         except Exception:
-            total_ngo_expenses = 0  # Default to 0 if no record exists
-        
-        available_funds = total_donations - total_expenses
-        utilization_rate = (total_expenses / total_donations * 100) if total_donations > 0 else 0
-        # Override available_funds with on-ledger wallet USD balance when possible
+            total_expenses = 0  # Default to 0 if no record exists
+        # Get available funds from wallet balance (primary source of truth)
+        available_funds = 0
         try:
             public_key = account.get("public_key")
             if public_key:
@@ -239,7 +215,7 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
                     usd = convert_drops_to_usd(drops_val)
                     available_funds = int(round(usd * 100))
         except Exception:
-            pass
+            available_funds = 0
 
         # Get lifetime donations and goal from the current account
         lifetime_donations = account.get("lifetime_donations", 0)
@@ -263,15 +239,16 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
         else:
             goal = int(goal)
 
+        # Calculate utilization rate based on lifetime donations
+        utilization_rate = (total_expenses / lifetime_donations_minor * 100) if lifetime_donations_minor > 0 else 0
+
         return {
             "active_recipients": active_recipients,
-            "total_donations_30d": total_donations,
-            "total_expenses_30d": total_expenses,
-            "total_ngo_expenses": total_ngo_expenses,
-            "available_funds": available_funds,
+            "total_expenses": total_expenses,  # From auditor table
+            "available_funds": available_funds,  # From wallet balance  
+            "lifetime_donations": lifetime_donations_minor,  # Total raised ever (minor units)
+            "goal": goal,  # Target amount (major units)
             "utilization_rate": utilization_rate,
-            "lifetime_donations": lifetime_donations_minor,  # In minor units (cents)
-            "goal": goal,  # In major units (dollars)
             "last_updated": now_iso(),
         }
     except HTTPException:
