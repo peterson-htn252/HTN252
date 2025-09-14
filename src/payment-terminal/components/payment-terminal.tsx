@@ -96,30 +96,19 @@ export function PaymentTerminal() {
     if (result.success && result.publicKey && result.recipientId) {
       setPaymentError(null)
       try {
-        // Get wallet balance
+        // Get XRPL wallet balance (this is what we use for payment)
         const walletRes = await fetch("http://localhost:8000/wallets/balance-usd", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ public_key: result.publicKey }),
         })
         const walletData = await walletRes.json().catch(() => ({}))
+        const walletBalance = walletData.balance_usd || 0
 
-        // Get recipient details and balance
-        const recipientRes = await fetch(`http://localhost:8000/recipients/${result.recipientId}`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        })
-        
-        let recipientBalance = 0
-        if (recipientRes.ok) {
-          const recipientData = await recipientRes.json()
-          recipientBalance = recipientData.balance || 0
-        }
-
-        // Check if recipient has sufficient balance
+        // Check if recipient has sufficient XRPL wallet balance
         const transactionAmount = transactionData?.total || 0
-        if (recipientBalance < transactionAmount) {
-          setPaymentError(`Insufficient balance. Available: $${recipientBalance.toFixed(2)}, Required: $${transactionAmount.toFixed(2)}`)
+        if (walletBalance < transactionAmount) {
+          setPaymentError(`Insufficient wallet balance. Available: $${walletBalance.toFixed(2)}, Required: $${transactionAmount.toFixed(2)}`)
           setCurrentStep("checkout")
           return
         }
@@ -127,8 +116,8 @@ export function PaymentTerminal() {
         setWalletInfo({
           recipientId: result.recipientId,
           publicKey: result.publicKey,
-          balanceUsd: walletData.balance_usd,
-          recipientBalance: recipientBalance,
+          balanceUsd: walletBalance,
+          recipientBalance: walletBalance,  // Same as wallet balance since that's what matters
         })
         setCurrentStep("wallet")
       } catch (error) {
@@ -249,7 +238,7 @@ export function PaymentTerminal() {
 
           <PaymentActions
             currentStep={currentStep}
-            onStepChange={setCurrentStep}
+            onStepChange={(step: string) => setCurrentStep(step as TerminalStep)}
             onCheckout={handleCheckout}
             onPaymentComplete={handlePaymentComplete}
             onWalletConfirm={handleWalletConfirm}
