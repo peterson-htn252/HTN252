@@ -1,3 +1,6 @@
+import traceback
+
+
 FACE_AVAILABLE = False
 _face_app = None
 

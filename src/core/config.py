@@ -14,6 +14,7 @@ NGO_HOT_SEED = os.getenv("NGO_HOT_SEED")
 NGO_HOT_ADDRESS = os.getenv("NGO_HOT_ADDRESS")
 OFFRAMP_DEPOSIT_ADDRESS = os.getenv("OFFRAMP_DEPOSIT_ADDRESS", "")
 OFFRAMP_DEST_TAG = int(os.getenv("OFFRAMP_DEST_TAG", "0"))
+XRPL_USD_RATE = float(os.getenv("XRPL_USD_RATE", "3.11"))  # Dev-only FX rate
 
 JWT_SECRET = os.getenv("JWT_SECRET", "jwt-dev")
 JWT_ALGORITHM = "HS256"

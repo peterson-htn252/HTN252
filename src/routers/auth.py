@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from models import NGORegister, NGOLogin, Token
 from core.auth import hash_password, verify_password, create_access_token, get_current_ngo
-from core.database import TBL_NGOS, TBL_PROGRAMS
+from core.database import TBL_NGOS, TBL_PROGRAMS, TBL_NGO_EXPENSES
 from core.utils import now_iso
 
 router = APIRouter()
@@ -29,7 +29,7 @@ def register_ngo(body: NGORegister):
         "password_hash": hashed_password,
         "organization_name": body.organization_name,
         "contact_name": body.contact_name,
-        "goal": body.goal,
+        "goal": int(body.goal),
         "description": body.description,
         "status": "active",
         "default_program_id": program_id,
@@ -44,6 +44,14 @@ def register_ngo(body: NGORegister):
         "status": "active",
         "created_at": now_iso(),
     })
+    
+    # Create NGO expense record
+    TBL_NGO_EXPENSES.put_item(Item={
+        "ngo_id": ngo_id,
+        "expenses": 0.0,
+        "created_at": now_iso(),
+    })
+    
     access_token = create_access_token({"sub": ngo_id, "email": body.email})
     return Token(
         access_token=access_token,
