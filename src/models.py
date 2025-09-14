@@ -11,6 +11,8 @@ class AccountCreate(BaseModel):
     email: str
     password: str
     ngo_id: Optional[str] = None
+    goal: Optional[str] = None
+    description: Optional[str] = None
 
 
 class AccountLogin(BaseModel):
@@ -80,9 +82,8 @@ class NGORegister(BaseModel):
     password: str = Field(..., min_length=8)
     organization_name: str
     contact_name: str
-    phone: Optional[str] = None
-    address: Optional[str] = None
-    description: Optional[str] = None
+    goal: str
+    description: str
 
 
 class NGOLogin(BaseModel):
@@ -102,6 +103,16 @@ class AccountToken(BaseModel):
     token_type: str
     account_id: str
     account_type: str
+
+
+class NGOAccountSummary(BaseModel):
+    account_id: str
+    name: str
+    description: str
+    goal: str
+    status: str
+    lifetime_donations: int
+    created_at: str
 
 
 class RecipientCreate(BaseModel):

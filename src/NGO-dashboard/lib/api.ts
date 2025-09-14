@@ -93,7 +93,9 @@ class APIClient {
       name: registrationData.organization_name,
       email: registrationData.email,
       password: registrationData.password,
-      ngo_id: null // Will be set by server
+      ngo_id: null, // Will be set by server
+      goal: registrationData.goal,
+      description: registrationData.description
     };
     
     return this.request<{ account_id: string }>('/accounts', {
@@ -109,6 +111,8 @@ class APIClient {
       name: string;
       email: string;
       ngo_id?: string;
+      goal?: string;
+      description?: string;
       status: string;
       created_at: string;
     }>('/accounts/me');
@@ -119,9 +123,8 @@ class APIClient {
       email: account.email,
       organization_name: account.name,
       contact_name: account.name, // Use name as contact_name for now
-      phone: '', // Not available in account data
-      address: '', // Not available in account data
-      description: '', // Not available in account data
+      goal: account.goal || '',
+      description: account.description || '',
       status: account.status as 'active' | 'inactive',
       created_at: account.created_at,
       default_program_id: account.ngo_id || ''
