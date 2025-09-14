@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,32 +15,15 @@ interface DonationFormProps {
 
 type PaymentMethod = "card" | "ripple"
 
-const programs = [
-  {
-    id: "typhoon",
-    name: "Typhoon Relief Program",
-    description: "Emergency aid for typhoon victims in the Philippines",
-    urgency: "high",
-    raised: 45000,
-    goal: 100000,
-  },
-  {
-    id: "earthquake",
-    name: "Earthquake Emergency Fund",
-    description: "Immediate assistance for earthquake survivors in Turkey",
-    urgency: "critical",
-    raised: 78000,
-    goal: 150000,
-  },
-  {
-    id: "flood",
-    name: "Flood Recovery Initiative",
-    description: "Long-term recovery support for flood-affected communities",
-    urgency: "medium",
-    raised: 23000,
-    goal: 75000,
-  },
-]
+interface NGOProgram {
+  account_id: string
+  name: string
+  description: string
+  goal: string
+  status: string
+  lifetime_donations: number
+  created_at: string
+}
 
 export function DonationForm({ onDonationComplete }: DonationFormProps) {
   const [step, setStep] = useState<"select" | "amount" | "payment" | "processing" | "complete">("select")
@@ -49,6 +32,8 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
   const [email, setEmail] = useState("")
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card")
   const [isProcessing, setIsProcessing] = useState(false)
+  const [programs, setPrograms] = useState<NGOProgram[]>([])
+  const [isLoadingPrograms, setIsLoadingPrograms] = useState(true)
   const [donationResult, setDonationResult] = useState<{
     donationId: string
     blockchainId: string
@@ -57,7 +42,27 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     paymentMethod: string
   } | null>(null)
 
-  const selectedProgramData = programs.find((p) => p.id === selectedProgram)
+  useEffect(() => {
+    const fetchPrograms = async () => {
+      try {
+        const response = await fetch("http://127.0.0.1:8000/accounts/ngos")
+        if (response.ok) {
+          const data = await response.json()
+          setPrograms(data.filter((ngo: NGOProgram) => ngo.status === "active"))
+        } else {
+          console.error("Failed to fetch NGO programs")
+        }
+      } catch (error) {
+        console.error("Error fetching NGO programs:", error)
+      } finally {
+        setIsLoadingPrograms(false)
+      }
+    }
+
+    fetchPrograms()
+  }, [])
+
+  const selectedProgramData = programs.find((p) => p.account_id === selectedProgram)
 
   const handleProgramSelect = (programId: string) => {
     setSelectedProgram(programId)
@@ -164,53 +169,57 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
         <div className="text-center">
           <h3 className="text-2xl font-bold mb-2">Choose a Program to Support</h3>
           <p className="text-muted-foreground">
-            Select an emergency relief program where your donation will make an immediate impact
+            Select an active NGO program where your donation will make an immediate impact
           </p>
         </div>
 
-        <div className="grid gap-4">
-          {programs.map((program) => (
-            <Card
-              key={program.id}
-              className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-primary/50"
-              onClick={() => handleProgramSelect(program.id)}
-            >
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">{program.name}</CardTitle>
-                  <Badge
-                    variant={
-                      program.urgency === "critical"
-                        ? "destructive"
-                        : program.urgency === "high"
-                          ? "default"
-                          : "secondary"
-                    }
-                  >
-                    {program.urgency} priority
-                  </Badge>
-                </div>
-                <CardDescription>{program.description}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Progress</span>
-                    <span>
-                      ${program.raised.toLocaleString()} of ${program.goal.toLocaleString()}
-                    </span>
+        {isLoadingPrograms ? (
+          <div className="text-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+            <p className="text-muted-foreground">Loading available programs...</p>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {programs.map((program) => (
+              <Card
+                key={program.account_id}
+                className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-primary/50"
+                onClick={() => handleProgramSelect(program.account_id)}
+              >
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{program.name}</CardTitle>
+                    <Badge variant="default">{program.status}</Badge>
                   </div>
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div
-                      className="bg-primary h-2 rounded-full transition-all"
-                      style={{ width: `${(program.raised / program.goal) * 100}%` }}
-                    />
+                  <CardDescription>{program.description}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Goal</span>
+                      <span className="font-medium">{program.goal}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Total Donations</span>
+                      <span>${program.lifetime_donations.toLocaleString()}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Established: {new Date(program.created_at).toLocaleDateString()}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </CardContent>
+              </Card>
+            ))}
+
+            {programs.length === 0 && (
+              <Card>
+                <CardContent className="py-8 text-center">
+                  <p className="text-muted-foreground">No active programs available at the moment.</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
       </div>
     )
   }
