@@ -41,6 +41,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
+      transactionId?: string
       vendorName?: string
       items?: CheckoutItem[]
       total?: number
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
       vendorName: body.vendorName,
       items: body.items,
       total: body.total,
-      transactionId: `txn_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      transactionId: body.transactionId ?? `txn_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
       storeId: body.storeId,
       programId: body.programId,
     }

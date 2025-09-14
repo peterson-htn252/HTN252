@@ -118,6 +118,7 @@ export default function POSCheckout() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          transactionId,
           vendorName: VENDOR_NAME,
           items: cart,
           total,
