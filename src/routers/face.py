@@ -355,8 +355,10 @@ async def face_identify_batch_public(
     threshold: float = 0.40,
     ngo_id: Optional[str] = Form(None),
 ):
-    """Public version of identify_batch for payment terminal (no auth required)."""
-
+    """
+    Public version of identify_batch for payment terminal (no auth required).
+    Performs a global search across all face maps to identify the account.
+    """
     unk_embs: List[np.ndarray] = []
     frames_used = 0
 
@@ -377,17 +379,12 @@ async def face_identify_batch_public(
 
     unk = _mean_centroid(unk_embs)
 
-    if ngo_id:
-        resp = TBL_FACE_MAPS.scan(
-            FilterExpression="ngo_id = :ngo",
-            ExpressionAttributeValues={":ngo": ngo_id},
-        )
-    else:
-        resp = TBL_FACE_MAPS.scan()
-
+    # Scan all stored face embeddings without NGO scoping
+    resp = TBL_FACE_MAPS.scan()
     items = resp.get("Items", []) or []
 
-    scored: List[dict] = []
+    scored = []
+
     mismatched = 0
     for it in items:
         try:
@@ -396,11 +393,14 @@ async def face_identify_batch_public(
                 mismatched += 1
                 continue
             score = _cosine(unk, e)
-            scored.append({
-                "recipient_id": it.get("recipient_id"),
-                "face_id": it.get("face_id"),
-                "score": float(score),
-            })
+            scored.append(
+                {
+                    "account_id": it.get("account_id") or it.get("recipient_id"),
+                    "face_id": it.get("face_id"),
+                    "score": float(score),
+                    "ngo_id": it.get("ngo_id"),
+                }
+            )
         except Exception:
             continue
 
@@ -411,23 +411,30 @@ async def face_identify_batch_public(
             "frames_used": int(frames_used),
             "matches": [],
             "model": "buffalo_l",
+            "search_scope": "global",
             "debug": {"mismatched_dims": int(mismatched)},
         }
 
+    # Enrich matches with account details
     for m in top:
         try:
-            rec = (
-                TBL_RECIPIENTS.get_item(Key={"recipient_id": m["recipient_id"]})
-                .get("Item")
+            acc_id = m.get("account_id")
+            if not acc_id:
+                continue
+            acc = (
+                TBL_ACCOUNTS.get_item(Key={"account_id": acc_id}).get("Item")
+                or TBL_RECIPIENTS.get_item(Key={"recipient_id": acc_id}).get("Item")
             )
-            if rec:
-                m["public_key"] = rec.get("public_key")
-                m["name"] = rec.get("name")
-                addr = rec.get("address")
-                if not addr and rec.get("public_key"):
-                    addr = derive_address_from_public_key(rec["public_key"])
+            if acc:
+                m["public_key"] = acc.get("public_key")
+                m["name"] = acc.get("name")
+                addr = acc.get("address")
+                if not addr and acc.get("public_key"):
+                    addr = derive_address_from_public_key(acc["public_key"])
                 if addr:
                     m["address"] = addr
+                if acc.get("ngo_id") and not m.get("ngo_id"):
+                    m["ngo_id"] = acc.get("ngo_id")
         except Exception:
             continue
 
@@ -435,5 +442,6 @@ async def face_identify_batch_public(
         "frames_used": int(frames_used),
         "matches": top,
         "model": "buffalo_l",
+        "search_scope": "global",
         "debug": {"mismatched_dims": int(mismatched)},
     }
