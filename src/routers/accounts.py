@@ -428,7 +428,7 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
             
             # Update local balance to reflect the transfer
             new_balance = current_balance + body.amount
-            
+
             # Update balance in database
             TBL_RECIPIENTS.update_item(
                 Key={"recipient_id": recipient_id},
@@ -437,8 +437,6 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
                     ":balance": new_balance,
                 },
             )
-            
-            # Transfer completed - no need to track in database tables
         else:
             # Handle withdrawal (update balance only, no wallet transfer)
             new_balance = current_balance - body.amount
