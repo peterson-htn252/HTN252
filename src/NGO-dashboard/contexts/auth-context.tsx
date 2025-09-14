@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { NGO, AuthToken, LoginRequest } from '@/lib/types';
+import { NGO, AuthToken, LoginRequest, RegisterRequest } from '@/lib/types';
 import { apiClient } from '@/lib/api';
 
 interface AuthContextType {
@@ -10,6 +10,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (credentials: LoginRequest) => Promise<void>;
+  register: (registrationData: RegisterRequest) => Promise<void>;
   logout: () => void;
   error: string | null;
 }
@@ -63,6 +64,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const register = async (registrationData: RegisterRequest) => {
+    try {
+      setError(null);
+      setIsLoading(true);
+      
+      const accountData = await apiClient.register(registrationData);
+      
+      // Account created successfully - for now we just return without authentication
+      // In a real app, you might want to automatically log them in or redirect to login
+      console.log('Account created with ID:', accountData.account_id);
+      
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Registration failed');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const logout = () => {
     apiClient.clearToken();
     setUser(null);
@@ -76,6 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading,
     isAuthenticated: !!user && !!token,
     login,
+    register,
     logout,
     error,
   };
