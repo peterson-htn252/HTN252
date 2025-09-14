@@ -118,6 +118,7 @@ class NGOAccountSummary(BaseModel):
     status: str
     lifetime_donations: int
     created_at: str
+    xrpl_address: Optional[str] = None
 
 
 class RecipientCreate(BaseModel):

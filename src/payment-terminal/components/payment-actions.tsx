@@ -32,12 +32,6 @@ export function PaymentActions({
       currentProgress += Math.random() * 15
       setProgress(Math.min(currentProgress, 100))
 
-      if (currentProgress >= 100) {
-        clearInterval(interval)
-        setTimeout(() => {
-          onPaymentComplete()
-        }, 500)
-      }
     }, 200)
   }
 

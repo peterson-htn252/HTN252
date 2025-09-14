@@ -41,22 +41,20 @@ export function DonorDashboard() {
   useEffect(() => {
     async function loadImpactData() {
       try {
-        const ngos = await fetchNGOs()
-        const calculatedImpactData = calculateImpactData(ngos)
-        setImpactData(calculatedImpactData)
-      } catch (error) {
-        console.error("[v0] Error loading impact data:", error)
+        const ngos = await fetchNGOs();           // ← now always an array
+        setImpactData(calculateImpactData(ngos)); // ← safe reduce
+      } catch (e) {
+        console.error("[v0] Error loading impact data:", e);
         setImpactData({
           totalDonated: 146000,
           peopleHelped: 555,
           programsSupported: 3,
           transparencyScore: 98,
-        })
+        });
       }
     }
-
-    loadImpactData()
-  }, [])
+    loadImpactData();
+  }, []);
 
   const handleDonationComplete = (donationId: string, blockchainId: string) => {
     console.log("Donation completed:", { donationId, blockchainId })
@@ -70,7 +68,7 @@ export function DonorDashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className="h-8 w-8 text-primary" />
-              <h1 className="text-2xl font-bold text-foreground">Transparent Aid</h1>
+              <h1 className="text-2xl font-bold text-foreground">Ripple Relief</h1>
             </div>
             <Badge variant="secondary" className="text-sm">
               Powered by Ripple XRPL

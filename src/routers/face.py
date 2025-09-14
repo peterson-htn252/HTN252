@@ -9,9 +9,9 @@ from core.database import (
     TBL_FACE_MAPS,
     TBL_PENDING_FACE_MAPS,
     TBL_RECIPIENTS,
-    TBL_ACCOUNTS,
 )
 from core.utils import now_iso
+from core.xrpl import derive_address_from_public_key
 
 router = APIRouter()
 
@@ -258,8 +258,7 @@ async def face_promote(
 async def face_identify_batch(
     files: List[UploadFile] = File(...),
     top_k: int = 3,
-    threshold: float = 0.40,
-    current_ngo: dict = Depends(get_current_ngo),
+    threshold: float = 0.60,
 ):
     """
     Identify an unknown user from a short burst:
@@ -290,10 +289,7 @@ async def face_identify_batch(
     unk = _mean_centroid(unk_embs)
 
     # match within NGO
-    resp = TBL_FACE_MAPS.scan(
-        FilterExpression="ngo_id = :ngo",
-        ExpressionAttributeValues={":ngo": current_ngo["ngo_id"]},
-    )
+    resp = TBL_FACE_MAPS.scan()
     items = resp.get("Items", []) or []
 
     scored = []
@@ -306,7 +302,7 @@ async def face_identify_batch(
                 continue
             score = _cosine(unk, e)
             scored.append({
-                "account_id": it.get("account_id"),
+                "recipient_id": it.get("recipient_id"),
                 "face_id": it.get("face_id"),
                 "score": float(score),
             })
@@ -325,10 +321,18 @@ async def face_identify_batch(
 
     for m in top:
         try:
-            acc = TBL_ACCOUNTS.get_item(Key={"account_id": m["account_id"]}).get("Item")
-            if acc:
-                m["public_key"] = acc.get("public_key")
-                m["name"] = acc.get("name")
+            rec = (
+                TBL_RECIPIENTS.get_item(Key={"recipient_id": m["recipient_id"]})
+                .get("Item")
+            )
+            if rec:
+                m["public_key"] = rec.get("public_key")
+                m["name"] = rec.get("name")
+                addr = rec.get("address")
+                if not addr and rec.get("public_key"):
+                    addr = derive_address_from_public_key(rec["public_key"])
+                if addr:
+                    m["address"] = addr
         except Exception:
             continue
 

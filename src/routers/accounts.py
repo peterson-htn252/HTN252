@@ -29,7 +29,6 @@ def create_account(body: AccountCreate):
         wallet_keys = create_new_wallet()
         public_key = wallet_keys["public_key"]
         private_key = wallet_keys["private_key"]
-        # Derive the address from the public key
         address = derive_address_from_public_key(public_key)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {str(e)}")
@@ -116,6 +115,16 @@ def get_current_account(current_user: dict = Depends(verify_token)):
             )
             account["public_key"] = public_key
             account["private_key"] = private_key
+        # Derive and persist address if missing
+        if not account.get("address") and account.get("public_key"):
+            addr = derive_address_from_public_key(account["public_key"])
+            if addr:
+                TBL_ACCOUNTS.update_item(
+                    Key={"account_id": account["account_id"]},
+                    UpdateExpression="SET address = :addr",
+                    ExpressionAttributeValues={":addr": addr},
+                )
+                account["address"] = addr
         account.pop("password_hash", None)
         # Do not expose private key in API responses
         account.pop("private_key", None)
@@ -143,21 +152,31 @@ def get_current_account(current_user: dict = Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/accounts/ngos", tags=["accounts"], response_model=List[NGOAccountSummary])
+@router.get("/accounts/ngos", tags=["accounts"])
 def get_all_ngo_accounts():
     """
-    Get all NGO accounts with their name, description, and goal.
-    Returns a list of NGO account summaries.
+    Get all NGO accounts with their name, description, goal, and XRPL address.
     """
-    try:
-        # Query all accounts with account_type = "NGO"
-        response = TBL_ACCOUNTS.scan(
+    response = TBL_ACCOUNTS.scan(
             FilterExpression="account_type = :account_type",
             ExpressionAttributeValues={":account_type": "NGO"}
         )
+
+    return response
+    try:
         
-        ngo_accounts = []
+
+        ngo_accounts: List[NGOAccountSummary] = []
         for item in response.get("Items", []):
+            # Safely derive an XRPL address from the stored public_key (may be None for legacy rows)
+            try:
+                xrpl_addr = None
+                pub = item.get("public_key")
+                if pub:
+                    xrpl_addr = derive_address_from_public_key(pub)
+            except Exception:
+                xrpl_addr = None
+
             ngo_accounts.append(NGOAccountSummary(
                 account_id=item["account_id"],
                 name=item["name"],
@@ -169,9 +188,10 @@ def get_all_ngo_accounts():
                 ),
                 status=item["status"],
                 lifetime_donations=item.get("lifetime_donations", 0),
-                created_at=item["created_at"]
+                created_at=item["created_at"],
+                xrpl_address=xrpl_addr,   # ✅ include it in the response
             ))
-        
+
         return ngo_accounts
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve NGO accounts: {str(e)}")
@@ -209,14 +229,15 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
         available_funds = 0
         try:
             public_key = account.get("public_key")
-            if public_key:
+            addr = account.get("address")
+            if not addr and public_key:
                 addr = derive_address_from_public_key(public_key)
-                if addr:
-                    drops = fetch_xrp_balance_drops(addr)
-                    # Treat unfunded (None) as 0 and still override
-                    drops_val = 0 if drops is None else drops
-                    usd = convert_drops_to_usd(drops_val)
-                    available_funds = int(round(usd * 100))
+            if addr:
+                drops = fetch_xrp_balance_drops(addr)
+                # Treat unfunded (None) as 0 and still override
+                drops_val = 0 if drops is None else drops
+                usd = convert_drops_to_usd(drops_val)
+                available_funds = int(round(usd * 100))
         except Exception:
             available_funds = 0
 
@@ -258,7 +279,6 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-
 
 
 
@@ -378,9 +398,9 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
             if not ngo_public_key or not ngo_private_key or not recipient_public_key:
                 raise HTTPException(status_code=500, detail="Wallet keys not properly configured")
             
-            # Derive addresses from public keys
-            ngo_address = derive_address_from_public_key(ngo_public_key)
-            recipient_address = derive_address_from_public_key(recipient_public_key)
+            # Use stored addresses or derive from public keys
+            ngo_address = account.get("address") or derive_address_from_public_key(ngo_public_key)
+            recipient_address = recipient.get("address") or derive_address_from_public_key(recipient_public_key)
             
             if not ngo_address or not recipient_address:
                 raise HTTPException(status_code=500, detail="Could not derive wallet addresses")
@@ -421,24 +441,52 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
                 },
             )
         else:
-            # Handle withdrawal (update balance only, no wallet transfer)
-            new_balance = current_balance - body.amount
+            # Handle withdrawal - transfer money from recipient wallet back to NGO wallet
+            # Get wallet details
+            ngo_public_key = account.get("public_key")
+            ngo_private_key = account.get("private_key")
+            recipient_public_key = recipient.get("public_key")
             
-            # Update balance
-            TBL_RECIPIENTS.update_item(
-                Key={"recipient_id": recipient_id},
-                UpdateExpression="SET balance = :balance",
-                ExpressionAttributeValues={
-                    ":balance": new_balance,
-                },
+            if not ngo_public_key or not ngo_private_key or not recipient_public_key:
+                raise HTTPException(status_code=500, detail="Wallet keys not properly configured")
+            
+            # Use stored addresses or derive from public keys
+            ngo_address = account.get("address") or derive_address_from_public_key(ngo_public_key)
+            recipient_address = recipient.get("address") or derive_address_from_public_key(recipient_public_key)
+            
+            if not ngo_address or not recipient_address:
+                raise HTTPException(status_code=500, detail="Could not derive wallet addresses")
+            
+            # Check recipient wallet balance
+            recipient_balance_drops = fetch_xrp_balance_drops(recipient_address)
+            if recipient_balance_drops is None:
+                raise HTTPException(status_code=400, detail="Recipient wallet is not funded or could not fetch balance")
+            
+            recipient_balance_usd = convert_drops_to_usd(recipient_balance_drops)
+            if recipient_balance_usd < body.amount:
+                raise HTTPException(status_code=400, detail=f"Insufficient recipient wallet balance. Available: ${recipient_balance_usd:.2f}")
+            
+            # Perform wallet-to-wallet transfer from recipient to NGO
+            memo = body.description or f"Withdrawal from {recipient['name']}"
+            tx_hash = transfer_between_wallets(
+                sender_seed=recipient.get("private_key"),
+                sender_address=recipient_address,
+                recipient_address=ngo_address,
+                amount_usd=body.amount,
+                memo=memo
             )
+            
+            if not tx_hash:
+                raise HTTPException(status_code=500, detail="Wallet transfer failed")
+            
+            new_balance = current_balance - body.amount
         
         return {
             "previous_balance": current_balance,
             "new_balance": new_balance,
             "operation": body.operation_type,
             "amount": body.amount,
-            "tx_hash": tx_hash if body.operation_type == "deposit" else None,
+            "tx_hash": tx_hash,
         }
     except HTTPException:
         raise
