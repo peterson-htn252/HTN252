@@ -246,6 +246,34 @@ def get_recipient_balance(recipient_id: str):
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
+@router.get("/recipients/{recipient_id}", tags=["recipients"])
+def get_recipient_public(recipient_id: str):
+    """Get recipient details for payment terminal (no auth required)"""
+    try:
+        # Handle demo recipient cases
+        if recipient_id in ["550e8400-e29b-41d4-a716-446655440000", "7c18326a-eafb-4f90-804c-6926baacb38a"]:
+            return {
+                "recipient_id": recipient_id,
+                "name": "Demo Recipient",
+                "balance": 100.0,  # Demo balance
+                "verified": True,
+                "created_at": "2024-01-01T00:00:00Z",
+            }
+        
+        recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
+        if not recipient:
+            raise HTTPException(status_code=404, detail="Recipient not found")
+        return {
+            "recipient_id": recipient_id,
+            "name": recipient.get("name"),
+            "balance": recipient.get("balance", 0.0),
+            "verified": recipient.get("verified", False),
+            "created_at": recipient.get("created_at"),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
 @router.post("/recipients/{recipient_id}/wallet-link/start", tags=["recipients"])
 def wallet_link_start(recipient_id: str, body: WalletLinkStart):
     return {"challenge": make_challenge(recipient_id, body.address)}
