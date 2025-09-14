@@ -29,7 +29,6 @@ def create_account(body: AccountCreate):
         wallet_keys = create_new_wallet()
         public_key = wallet_keys["public_key"]
         private_key = wallet_keys["private_key"]
-        # Derive the address from the public key
         address = derive_address_from_public_key(public_key)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {str(e)}")
@@ -116,6 +115,16 @@ def get_current_account(current_user: dict = Depends(verify_token)):
             )
             account["public_key"] = public_key
             account["private_key"] = private_key
+        # Derive and persist address if missing
+        if not account.get("address") and account.get("public_key"):
+            addr = derive_address_from_public_key(account["public_key"])
+            if addr:
+                TBL_ACCOUNTS.update_item(
+                    Key={"account_id": account["account_id"]},
+                    UpdateExpression="SET address = :addr",
+                    ExpressionAttributeValues={":addr": addr},
+                )
+                account["address"] = addr
         account.pop("password_hash", None)
         # Do not expose private key in API responses
         account.pop("private_key", None)
@@ -209,14 +218,15 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
         available_funds = 0
         try:
             public_key = account.get("public_key")
-            if public_key:
+            addr = account.get("address")
+            if not addr and public_key:
                 addr = derive_address_from_public_key(public_key)
-                if addr:
-                    drops = fetch_xrp_balance_drops(addr)
-                    # Treat unfunded (None) as 0 and still override
-                    drops_val = 0 if drops is None else drops
-                    usd = convert_drops_to_usd(drops_val)
-                    available_funds = int(round(usd * 100))
+            if addr:
+                drops = fetch_xrp_balance_drops(addr)
+                # Treat unfunded (None) as 0 and still override
+                drops_val = 0 if drops is None else drops
+                usd = convert_drops_to_usd(drops_val)
+                available_funds = int(round(usd * 100))
         except Exception:
             available_funds = 0
 
@@ -378,9 +388,9 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
             if not ngo_public_key or not ngo_private_key or not recipient_public_key:
                 raise HTTPException(status_code=500, detail="Wallet keys not properly configured")
             
-            # Derive addresses from public keys
-            ngo_address = derive_address_from_public_key(ngo_public_key)
-            recipient_address = derive_address_from_public_key(recipient_public_key)
+            # Use stored addresses or derive from public keys
+            ngo_address = account.get("address") or derive_address_from_public_key(ngo_public_key)
+            recipient_address = recipient.get("address") or derive_address_from_public_key(recipient_public_key)
             
             if not ngo_address or not recipient_address:
                 raise HTTPException(status_code=500, detail="Could not derive wallet addresses")

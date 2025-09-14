@@ -12,6 +12,7 @@ from core.database import (
     TBL_ACCOUNTS,
 )
 from core.utils import now_iso
+from core.xrpl import derive_address_from_public_key
 
 router = APIRouter()
 
@@ -329,6 +330,11 @@ async def face_identify_batch(
             if acc:
                 m["public_key"] = acc.get("public_key")
                 m["name"] = acc.get("name")
+                addr = acc.get("address")
+                if not addr and acc.get("public_key"):
+                    addr = derive_address_from_public_key(acc["public_key"])
+                if addr:
+                    m["address"] = addr
         except Exception:
             continue
 
