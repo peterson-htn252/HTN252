@@ -2,6 +2,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import remarkBreaks from "remark-breaks"
+import rehypeSanitize from "rehype-sanitize"
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,9 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CreditCard, Shield, CheckCircle, AlertCircle, Loader2, Wallet } from "lucide-react"
-import { fetchNGOs } from "@/lib/api";
-
-// Stripe UI wrapper you already added
+import { fetchNGOs } from "@/lib/api"
 import { StripePay } from "@/components/StripePay"
 
 interface DonationFormProps {
@@ -29,6 +32,48 @@ interface NGOProgram {
   lifetime_donations: number
   created_at: string
   xrpl_address?: string
+  summary?: string
+}
+
+/** Small helper to stream plaintext responses */
+async function streamText(
+  url: string,
+  init: RequestInit,
+  onChunk: (text: string) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const res = await fetch(url, { ...init, signal })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.body) throw new Error("No response body to stream")
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    onChunk(decoder.decode(value, { stream: true }))
+  }
+}
+
+/** Inline Markdown viewer with safe defaults */
+function MarkdownViewer({ text }: { text: string }) {
+  return (
+    <div className="prose prose-sm dark:prose-invert max-w-none">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkBreaks]}
+        rehypePlugins={[rehypeSanitize]}
+        components={{
+          a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+          img: () => null, // avoid images in summaries
+          h1: ({ node, ...p }) => <h2 {...p} />, // downsize headings inside cards
+          h2: ({ node, ...p }) => <h3 {...p} />,
+        }}
+      >
+        {text || ""}
+      </ReactMarkdown>
+    </div>
+  )
 }
 
 export function DonationForm({ onDonationComplete }: DonationFormProps) {
@@ -49,34 +94,106 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     paymentMethod: string
   } | null>(null)
 
-  // Load programs
-useEffect(() => {
-  const fetchPrograms = async () => {
-    try {
-      const ngos = await fetchNGOs();
+  // Load programs, then stream EIN+summary per card
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
 
-      const progs: NGOProgram[] = ngos.map((n: any) => ({
-        account_id: n.account_id,
-        name: n.name,
-        description: n.description,
-        goal: Number(n.goal ?? 0),
-        status: String(n.status ?? "inactive"),
-        lifetime_donations: Number(n.lifetime_donations ?? 0),
-        created_at: n.created_at,
-        xrpl_address: n.address ?? n.xrpl_address ?? "",   // 👈 map it here
-      }));
+    const run = async () => {
+      try {
+        const ngos = await fetchNGOs()
 
-      setPrograms(progs.filter((p) => p.status.toLowerCase() === "active"));
-    } catch (e) {
-      console.error("Failed to load programs:", e);
-    } finally {
-      setIsLoadingPrograms(false);
+        // 1) Set base cards immediately (fast UI)
+        const base: NGOProgram[] = ngos.map((n: any) => ({
+          account_id: n.account_id,
+          name: n.name,
+          description: n.description,
+          goal: Number(n.goal ?? 0),
+          status: String(n.status ?? "inactive"),
+          lifetime_donations: Number(n.lifetime_donations ?? 0),
+          created_at: n.created_at,
+          xrpl_address: n.address ?? n.xrpl_address ?? "",
+          summary: "",
+        }))
+        setPrograms(base)
+
+        // 2) For each, fetch EIN (JSON) then stream summary (text)
+        for (const n of ngos) {
+          const programKey = n.account_id
+
+          // EIN lookup
+          let ein: string | undefined
+          try {
+            const r0 = await fetch("http://localhost:8000/npo/ein", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ organization: n.name }),
+              signal: controller.signal,
+            })
+            if (r0.ok) {
+              const d0: any = await r0.json()
+              ein = d0?.results?.[0]?.ein || undefined
+            }
+          } catch {
+            // ignore EIN failure; we can still summarize from Wikipedia/Wikidata
+          }
+
+          // Stream the summary; throttle UI updates to ~60fps
+          try {
+            let gotFirst = false
+            let buffer = ""
+            let raf: number | null = null
+            const flush = () => {
+              if (cancelled || !buffer) return
+              setPrograms((prev) =>
+                prev.map((p) =>
+                  p.account_id === programKey ? { ...p, summary: (p.summary || "") + buffer } : p
+                )
+              )
+              buffer = ""
+              raf = null
+            }
+
+            await streamText(
+              "http://localhost:8000/npo/summarize", // streams text by default
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ organization: n.name, ein }),
+              },
+              (chunk) => {
+                if (cancelled) return
+                if (!gotFirst) {
+                  // Strip leading "# Org" header if your backend yields it
+                  chunk = chunk.replace(/^# .*?\n+/, "")
+                  gotFirst = true
+                }
+                buffer += chunk
+                if (!raf) raf = requestAnimationFrame(flush)
+              },
+              controller.signal
+            )
+            if (buffer) flush()
+          } catch (err) {
+            console.error("Streaming summary failed:", err)
+          }
+        }
+
+        // Optional: filter after starting streams (or keep full list)
+        setPrograms((prev) => prev.filter((p) => p.status.toLowerCase() === "active"))
+      } catch (e) {
+        console.error("Failed to load programs:", e)
+      } finally {
+        if (!cancelled) setIsLoadingPrograms(false)
+      }
     }
-  };
-  fetchPrograms();
-}, []);
 
-
+    run()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [])
 
   const selectedProgramData = programs.find((p) => p.account_id === selectedProgram)
 
@@ -125,7 +242,7 @@ useEffect(() => {
     }
   }
 
-  // ----- ✅ NEW: call fulfill route after Stripe confirms card -----
+  // ----- After Stripe confirms card -----
   const handleStripeConfirmed = async (paymentIntentId: string) => {
     setIsProcessing(true)
     setStep("processing")
@@ -135,13 +252,10 @@ useEffect(() => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           paymentIntentId,
-          // If your FastAPI/docs don’t return an address per program yet,
-          // you can still pass one if present; otherwise your fulfill route
           overrideAddress: selectedProgramData?.xrpl_address || undefined,
         }),
       })
       const data = await r.json()
-      console.log(data);
       if (!r.ok) throw new Error(data.error || "Fulfillment failed")
 
       setDonationResult({
@@ -199,6 +313,13 @@ useEffect(() => {
                     <Badge variant="default">{program.status}</Badge>
                   </div>
                   <CardDescription>{program.description}</CardDescription>
+
+                  {!!program.summary && (
+                    <div className="mt-2">
+                      <span className="text-sm font-medium text-muted-foreground">AI Summary:</span>
+                      <MarkdownViewer text={program.summary} />
+                    </div>
+                  )}
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
@@ -239,6 +360,16 @@ useEffect(() => {
           <CardDescription>Supporting: {selectedProgramData?.name}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {selectedProgramData?.description && (
+            <p className="text-sm text-muted-foreground">{selectedProgramData.description}</p>
+          )}
+          {!!selectedProgramData?.summary && (
+            <div>
+              <span className="text-sm font-medium text-muted-foreground">AI Summary:</span>
+              <MarkdownViewer text={selectedProgramData.summary} />
+            </div>
+          )}
+
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
               {[25, 50, 100].map((amount) => (
@@ -288,7 +419,7 @@ useEffect(() => {
         </CardContent>
       </Card>
     )
-  } // ← make sure this brace closes the amount block EXACTLY here
+  }
 
   if (step === "payment") {
     return (
@@ -299,8 +430,17 @@ useEffect(() => {
             Donating ${donationAmount} to {selectedProgramData?.name}
           </CardDescription>
         </CardHeader>
-
         <CardContent className="space-y-6">
+          {selectedProgramData?.description && (
+            <p className="text-sm text-muted-foreground">{selectedProgramData.description}</p>
+          )}
+          {!!selectedProgramData?.summary && (
+            <div>
+              <span className="text-sm font-medium text-muted-foreground">AI Summary:</span>
+              <MarkdownViewer text={selectedProgramData.summary} />
+            </div>
+          )}
+
           <div className="space-y-4">
             <div className="space-y-3">
               <Label>Payment Method</Label>
@@ -338,17 +478,14 @@ useEffect(() => {
             </div>
 
             {paymentMethod === "card" ? (
-              <>
-
-                <StripePay
+              <StripePay
                 amountCents={Math.round(Number.parseFloat(donationAmount || "0") * 100)}
                 currency="usd"
                 programId={selectedProgram}
                 email={email}
-                ngoPublicKey={selectedProgramData?.xrpl_address ?? ""}  // uses mapped value
+                ngoPublicKey={selectedProgramData?.xrpl_address ?? ""}
                 onConfirmed={handleStripeConfirmed}
               />
-              </>
             ) : (
               <Alert>
                 <Wallet className="h-4 w-4" />
