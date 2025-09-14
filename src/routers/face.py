@@ -1,12 +1,10 @@
-# --- new code ---
-from typing import List, Optional
-from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
+from typing import List, Tuple, Optional
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 import numpy as np
 import uuid, json
 
 from core.face import get_face_app, FACE_AVAILABLE
-from core.auth import get_current_ngo
-from core.database import TBL_FACE_MAPS
+from core.database import TBL_FACE_MAPS, TBL_ACCOUNTS
 from core.utils import now_iso
 
 router = APIRouter()
@@ -19,10 +17,10 @@ def _img_bytes_to_ndarray(data: bytes):
         raise HTTPException(400, "Invalid image file")
     return img
 
-def _best_face_embedding(img):
+def _best_face_embedding(img) -> Tuple[np.ndarray, dict]:
     appf = get_face_app()
-    # if appf is None:
-    #     raise HTTPException(503, "InsightFace not available on server")
+    if appf is None or not FACE_AVAILABLE:
+        raise HTTPException(503, "InsightFace not available on server")
     faces = appf.get(img)
     if not faces:
         raise HTTPException(400, "No face detected")
@@ -45,37 +43,61 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b))
 
 @router.post("/face/enroll", tags=["face"])
-async def face_enroll_batch(
+async def face_enroll(
     files: List[UploadFile] = File(...),
-    account_id: Optional[str] = Form(None),
+    name: str = Form(...),
 ):
-    # if not FACE_AVAILABLE:
-    #     return {"note": "InsightFace not installed on server"}
+    """
+    Enroll a user face map from a short burst.
+    Accepts files and the user's name only.
+    Looks up account_id and ngo_id from TBL_ACCOUNTS.
+    """
+    if not FACE_AVAILABLE or get_face_app() is None:
+        raise HTTPException(503, "InsightFace not available on server")
+
+    # Resolve account by name. Names may not be unique; handle that.
+    resp = TBL_ACCOUNTS.scan(
+        FilterExpression="#nm = :nm",
+        ExpressionAttributeNames={"#nm": "name"},
+        ExpressionAttributeValues={":nm": name},
+    )
+    accounts = resp.get("Items", []) or []
+    if not accounts:
+        raise HTTPException(404, "Account not found for this name")
+    if len(accounts) > 1:
+        # You can change this to pick the latest or require a second field to disambiguate
+        raise HTTPException(409, "Multiple accounts found with this name. Please disambiguate.")
+
+    account = accounts[0]
+    account_id = account["account_id"]
+    ngo_id = account["ngo_id"]
 
     import cv2
 
-    embs = []
-    weights = []
+    embs: List[np.ndarray] = []
+    weights: List[float] = []
     used = 0
 
     for uf in files:
         try:
             data = await uf.read()
+            if not data:
+                continue
             img = _img_bytes_to_ndarray(data)
             emb, meta = _best_face_embedding(img)
 
-            # simple quality scoring for weighting
             x1, y1, x2, y2 = [int(v) for v in meta["bbox"]]
-            area = (max(0, x2 - x1) * max(0, y2 - y1)) / (img.shape[0] * img.shape[1] + 1e-6)
-            face_roi = img[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
-            if face_roi.size:
-                gray = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
+            H, W = img.shape[:2]
+            area = (max(0, x2 - x1) * max(0, y2 - y1)) / (H * W + 1e-6)
+
+            if x2 > x1 and y2 > y1:
+                gray = cv2.cvtColor(img[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY)
                 blur = float(cv2.Laplacian(gray, cv2.CV_64F).var())
             else:
                 blur = 0.0
 
-            # weight combines detector confidence, face size, sharpness
-            w = 0.6 * float(meta.get("det_score", 0.0)) + 0.2 * min(1.0, area * 3.0) + 0.2 * min(1.0, blur / 200.0)
+            det = float(meta.get("det_score", 0.0))
+            w = 0.6 * det + 0.2 * min(1.0, area * 3.0) + 0.2 * min(1.0, blur / 200.0)
             w = max(w, 1e-6)
 
             embs.append(emb)
@@ -86,22 +108,22 @@ async def face_enroll_batch(
         except Exception:
             continue
 
-    if not embs: # TODO: NEed to fix getting embeddings
+    if not embs:
         raise HTTPException(400, "No faces detected in batch")
 
-    E = np.stack(embs).astype(np.float32)         # N x D, already L2-normalized rows
+    E = np.stack(embs).astype(np.float32)   # N x D, rows L2-normalized
     w = np.asarray(weights, dtype=np.float32)
     w = w / (w.sum() + 1e-12)
 
-    # preliminary centroid
+    # weighted centroid
     c = (w[:, None] * E).sum(axis=0)
     c = c / (np.linalg.norm(c) + 1e-12)
 
-    # trim outliers: drop bottom 20% by cosine to centroid
+    # optional outlier trim: drop bottom 20% by cosine to centroid
     sims = (E @ c)
     if sims.size >= 5:
-        thresh = float(np.quantile(sims, 0.2))
-        keep = sims >= thresh
+        cut = float(np.quantile(sims, 0.2))
+        keep = sims >= cut
         if keep.sum() >= 3:
             E2 = E[keep]
             w2 = w[keep]
@@ -109,20 +131,24 @@ async def face_enroll_batch(
             c = (w2[:, None] * E2).sum(axis=0)
             c = c / (np.linalg.norm(c) + 1e-12)
 
-    account_id = account_id or str(uuid.uuid4())
-    current_ngo = {"ngo_id": "demo-ngo"}  # TODO: query from account id
     row = {
         "face_id": str(uuid.uuid4()),
         "account_id": account_id,
-        "ngo_id": current_ngo["ngo_id"],
+        "ngo_id": ngo_id,
         "embedding": json.dumps([float(x) for x in c.tolist()]),
         "model": "buffalo_l",
-        "meta": json.dumps({"frames_used": used}),
+        "meta": json.dumps({"frames_used": used, "source": "batch_enroll"}),
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
     TBL_FACE_MAPS.put_item(Item=row)
-    return {"face_id": row["face_id"], "account_id": account_id, "frames_used": used}
+
+    return {
+        "face_id": row["face_id"],
+        "account_id": account_id,
+        "ngo_id": ngo_id,
+        "frames_used": used,
+    }
 
 @router.post("/face/identify_batch", tags=["face"])
 async def face_identify_batch(
@@ -130,7 +156,6 @@ async def face_identify_batch(
     top_k: int = 3,
     threshold: float = 0.40,
     trim_quantile: float = 0.3,     # drop worst 30% frames if >=5 frames
-    current_ngo: dict = Depends(get_current_ngo),
 ):
     """
     Identify using a short burst of frames.
