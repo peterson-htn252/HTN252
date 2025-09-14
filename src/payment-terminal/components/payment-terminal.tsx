@@ -40,7 +40,7 @@ export function PaymentTerminal() {
   const [transactionData, setTransactionData] = useState<TransactionData | null>(null)
   const [vendorName, setVendorName] = useState("Block Terminal")
   const [walletInfo, setWalletInfo] = useState<{
-    accountId: string
+    recipientId: string
     publicKey: string
     balanceUsd?: number
     recipientBalance?: number
@@ -64,7 +64,7 @@ export function PaymentTerminal() {
       }
     }
 
-    const interval = currentStep === "idle" ? setInterval(checkForTransaction, 2000) : null
+    const interval = currentStep === "idle" ? setInterval(checkForTransaction, 500) : null
 
     return () => {
       if (interval) clearInterval(interval)
@@ -74,7 +74,7 @@ export function PaymentTerminal() {
   const handlePaymentComplete = () => {
     setCurrentStep("accepted")
 
-    const audio = new Audio("/payment-success.mp3")
+    const audio = new Audio("/Happy.m4a")
     audio.play().catch(() => {
       console.log("[v0] Payment sound played")
     })
@@ -93,42 +93,31 @@ export function PaymentTerminal() {
   }
 
   const handleVerificationResult = async (result: VerificationResult) => {
-    if (result.success && result.publicKey && result.accountId) {
+    if (result.success && result.publicKey && result.recipientId) {
       setPaymentError(null)
       try {
-        // Get wallet balance
+        // Get XRPL wallet balance (this is what we use for payment)
         const walletRes = await fetch("http://localhost:8000/wallets/balance-usd", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ public_key: result.publicKey }),
         })
         const walletData = await walletRes.json().catch(() => ({}))
+        const walletBalance = walletData.balance_usd || 0
 
-        // Get recipient details and balance
-        const recipientRes = await fetch(`http://localhost:8000/recipients/${result.accountId}`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        })
-        
-        let recipientBalance = 0
-        if (recipientRes.ok) {
-          const recipientData = await recipientRes.json()
-          recipientBalance = recipientData.balance || 0
-        }
-
-        // Check if recipient has sufficient balance
+        // Check if recipient has sufficient XRPL wallet balance
         const transactionAmount = transactionData?.total || 0
-        if (recipientBalance < transactionAmount) {
-          setPaymentError(`Insufficient balance. Available: $${recipientBalance.toFixed(2)}, Required: $${transactionAmount.toFixed(2)}`)
+        if (walletBalance < transactionAmount) {
+          setPaymentError(`Insufficient wallet balance. Available: $${walletBalance.toFixed(2)}, Required: $${transactionAmount.toFixed(2)}`)
           setCurrentStep("checkout")
           return
         }
 
         setWalletInfo({
-          accountId: result.accountId,
+          recipientId: result.recipientId,
           publicKey: result.publicKey,
-          balanceUsd: walletData.balance_usd,
-          recipientBalance: recipientBalance,
+          balanceUsd: walletBalance,
+          recipientBalance: walletBalance,  // Same as wallet balance since that's what matters
         })
         setCurrentStep("wallet")
       } catch (error) {
@@ -156,7 +145,7 @@ export function PaymentTerminal() {
         body: JSON.stringify({
           voucher_id: transactionData.transactionId || `voucher_${Date.now()}`,
           store_id: transactionData.storeId || "store_001",
-          recipient_id: walletInfo.accountId,
+          recipient_id: walletInfo.recipientId,
           program_id: transactionData.programId || "general_aid",
           amount_minor: Math.round(transactionData.total * 100), // Convert to minor units (cents)
           currency: "USD"
@@ -249,7 +238,7 @@ export function PaymentTerminal() {
 
           <PaymentActions
             currentStep={currentStep}
-            onStepChange={setCurrentStep}
+            onStepChange={(step: string) => setCurrentStep(step as TerminalStep)}
             onCheckout={handleCheckout}
             onPaymentComplete={handlePaymentComplete}
             onWalletConfirm={handleWalletConfirm}

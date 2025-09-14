@@ -9,7 +9,6 @@ from core.database import (
     TBL_FACE_MAPS,
     TBL_PENDING_FACE_MAPS,
     TBL_RECIPIENTS,
-    TBL_ACCOUNTS,
 )
 from core.utils import now_iso
 from core.xrpl import derive_address_from_public_key
@@ -259,8 +258,7 @@ async def face_promote(
 async def face_identify_batch(
     files: List[UploadFile] = File(...),
     top_k: int = 3,
-    threshold: float = 0.40,
-    current_ngo: dict = Depends(get_current_ngo),
+    threshold: float = 0.60,
 ):
     """
     Identify an unknown user from a short burst:
@@ -291,10 +289,7 @@ async def face_identify_batch(
     unk = _mean_centroid(unk_embs)
 
     # match within NGO
-    resp = TBL_FACE_MAPS.scan(
-        FilterExpression="ngo_id = :ngo",
-        ExpressionAttributeValues={":ngo": current_ngo["ngo_id"]},
-    )
+    resp = TBL_FACE_MAPS.scan()
     items = resp.get("Items", []) or []
 
     scored = []
@@ -307,7 +302,7 @@ async def face_identify_batch(
                 continue
             score = _cosine(unk, e)
             scored.append({
-                "account_id": it.get("account_id"),
+                "recipient_id": it.get("recipient_id"),
                 "face_id": it.get("face_id"),
                 "score": float(score),
             })
@@ -326,13 +321,16 @@ async def face_identify_batch(
 
     for m in top:
         try:
-            acc = TBL_ACCOUNTS.get_item(Key={"account_id": m["account_id"]}).get("Item")
-            if acc:
-                m["public_key"] = acc.get("public_key")
-                m["name"] = acc.get("name")
-                addr = acc.get("address")
-                if not addr and acc.get("public_key"):
-                    addr = derive_address_from_public_key(acc["public_key"])
+            rec = (
+                TBL_RECIPIENTS.get_item(Key={"recipient_id": m["recipient_id"]})
+                .get("Item")
+            )
+            if rec:
+                m["public_key"] = rec.get("public_key")
+                m["name"] = rec.get("name")
+                addr = rec.get("address")
+                if not addr and rec.get("public_key"):
+                    addr = derive_address_from_public_key(rec["public_key"])
                 if addr:
                     m["address"] = addr
         except Exception:
@@ -344,37 +342,3 @@ async def face_identify_batch(
         "model": "buffalo_l",
         "debug": {"mismatched_dims": int(mismatched)},
     }
-
-
-@router.post("/face/identify_batch_public", tags=["face"])
-async def face_identify_batch_public(
-    files: List[UploadFile] = File(...),
-    top_k: int = 3,
-    threshold: float = 0.40,
-):
-    """
-    Public version of identify_batch for payment terminal (no auth required).
-    For demo purposes, returns a mock successful identification.
-    """
-    # For demo purposes, return a mock successful identification
-    frames_used = len(files)
-    
-    if frames_used == 0:
-        raise HTTPException(400, "No images provided")
-    
-    # Mock successful match for demo - using valid UUID format
-    mock_match = {
-        "account_id": "7c18326a-eafb-4f90-804c-6926baacb38a",  # Valid UUID format
-        "public_key": "demo_public_key_abc123", 
-        "similarity": 0.85,
-        "ngo_id": "69193d5d-aa14-42a0-b556-dd000390b3a3",  # Valid UUID format
-        "ngo_name": "Volcano Relief Alliance"
-    }
-    
-    return {
-        "frames_used": frames_used,
-        "matches": [mock_match],
-        "model": "buffalo_l (demo)",
-        "search_scope": "global"
-    }
-
