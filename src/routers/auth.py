@@ -9,6 +9,28 @@ from core.utils import now_iso
 router = APIRouter()
 
 
+@router.get("/ngos/public", tags=["ngos"])
+def list_public_ngos():
+    """Public endpoint to list all active NGOs for payment terminal selection"""
+    try:
+        response = TBL_NGOS.scan(
+            FilterExpression="attribute_exists(ngo_id) AND #status = :status",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={":status": "active"}
+        )
+        ngos = []
+        for item in response.get("Items", []):
+            ngos.append({
+                "ngo_id": item.get("ngo_id"),
+                "organization_name": item.get("organization_name"),
+                "description": item.get("description"),
+                "status": item.get("status", "active")
+            })
+        return {"ngos": ngos}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch NGOs: {str(e)}")
+
+
 @router.post("/auth/register", tags=["auth"], response_model=Token)
 def register_ngo(body: NGORegister):
     try:
