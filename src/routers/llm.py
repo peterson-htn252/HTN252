@@ -1,6 +1,7 @@
 # routers/npo.py
 from __future__ import annotations
 
+import functools
 import os
 import re
 import json
@@ -291,7 +292,7 @@ def build_messages(org_name: str, payload: Dict[str, Any]) -> List[Dict[str, str
                 "Controversies or issues (only if present)",
                 "Key sources (URLs)"
             ],
-            "style": "bullet points + short paragraphs; include dates and numbers where available"
+            "style": "bullet points + short paragraphs; include dates and numbers where available. if no data at all omit the section. if no data from every section mention that it is likely a fake, small, or very new org.",
         }
     }
     return [

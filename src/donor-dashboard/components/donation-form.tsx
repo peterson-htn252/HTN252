@@ -1,7 +1,7 @@
 // components/DonationForm.tsx
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
@@ -32,31 +32,11 @@ interface NGOProgram {
   lifetime_donations: number
   created_at: string
   xrpl_address?: string
-  summary?: string
 }
 
-/** Small helper to stream plaintext responses */
-async function streamText(
-  url: string,
-  init: RequestInit,
-  onChunk: (text: string) => void,
-  signal?: AbortSignal
-): Promise<void> {
-  const res = await fetch(url, { ...init, signal })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  if (!res.body) throw new Error("No response body to stream")
-
-  const reader = res.body.getReader()
-  const decoder = new TextDecoder()
-
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    onChunk(decoder.decode(value, { stream: true }))
-  }
-}
-
-/** Inline Markdown viewer with safe defaults */
+/* =========================================================
+   Markdown Viewer (safe)
+   ========================================================= */
 function MarkdownViewer({ text }: { text: string }) {
   return (
     <div className="prose prose-sm dark:prose-invert max-w-none">
@@ -65,8 +45,8 @@ function MarkdownViewer({ text }: { text: string }) {
         rehypePlugins={[rehypeSanitize]}
         components={{
           a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" />,
-          img: () => null, // avoid images in summaries
-          h1: ({ node, ...p }) => <h2 {...p} />, // downsize headings inside cards
+          img: () => null,
+          h1: ({ node, ...p }) => <h2 {...p} />,
           h2: ({ node, ...p }) => <h3 {...p} />,
         }}
       >
@@ -76,6 +56,212 @@ function MarkdownViewer({ text }: { text: string }) {
   )
 }
 
+/* =========================================================
+   Global Request Queue (dedup + total concurrency cap)
+   - Funnels EIN lookup + Streaming through one limiter.
+   ========================================================= */
+class RequestQueue {
+  private concurrency: number
+  private running = 0
+  private q: Array<() => void> = []
+  private inFlight = new Map<string, { promise: Promise<void>; abort: () => void }>()
+
+  constructor(concurrency: number) {
+    this.concurrency = Math.max(1, concurrency)
+  }
+
+  enqueue(key: string, task: (signal: AbortSignal) => Promise<void>): Promise<void> {
+    // Deduplicate by key (e.g., org name)
+    const existing = this.inFlight.get(key)
+    if (existing) return existing.promise
+
+    const controller = new AbortController()
+    const start = () => {
+      this.running++
+      const p = task(controller.signal)
+        .catch(() => {}) // UI handles errors; keep queue flowing
+        .finally(() => {
+          this.running--
+          this.inFlight.delete(key)
+          const next = this.q.shift()
+          if (next) next()
+        })
+      this.inFlight.set(key, { promise: p, abort: () => controller.abort() })
+    }
+
+    if (this.running < this.concurrency) start()
+    else this.q.push(start)
+    if (!this.inFlight.has(key)) this.inFlight.set(key, { promise: Promise.resolve(), abort: () => controller.abort() }) // placeholder
+    return this.inFlight.get(key)!.promise
+  }
+}
+
+// Limit all AI work to 2 concurrent jobs globally
+const aiQueue = new RequestQueue(2)
+
+/* =========================================================
+   Per-card lazy AI summary (IntersectionObserver + queue)
+   ========================================================= */
+async function streamText(
+  url: string,
+  init: RequestInit,
+  onChunk: (txt: string) => void
+) {
+  const res = await fetch(url, init)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error("No response body to stream")
+  const decoder = new TextDecoder()
+  while (true) {
+    const { value, done } = await reader.read()
+    const chunk = value ? decoder.decode(value, { stream: !done }) : ""
+    if (chunk) onChunk(chunk)
+    if (done) break
+  }
+}
+
+function AISummary({ orgName }: { orgName: string }) {
+  const [text, setText] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const startedRef = useRef(false)
+
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+
+    let cancelled = false
+
+    const startJob = () => {
+      if (startedRef.current) return
+      startedRef.current = true
+      setLoading(true)
+      setError(null)
+
+      aiQueue.enqueue(orgName, async (signal) => {
+        try {
+          // 1) Optional EIN lookup (JSON; also rate-limited by queue)
+          let ein: string | undefined
+          try {
+            const r0 = await fetch("http://localhost:8000/npo/ein", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ organization: orgName }),
+              signal,
+              cache: "no-store",
+              mode: "cors",
+            })
+            if (r0.ok) {
+              const d0: any = await r0.json()
+              ein = d0?.results?.[0]?.ein || undefined
+            }
+          } catch {
+            /* ignore EIN errors */
+          }
+
+          if (ein != null) {
+
+            // 2) Stream the plaintext summary
+            let gotFirst = false
+            let buffer = ""
+            let raf: number | null = null
+            const flush = () => {
+              if (!buffer || cancelled) return
+              setText((prev) => prev + buffer)
+              buffer = ""
+              raf = null
+            }
+
+            await streamText(
+              "http://localhost:8000/npo/summarize",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Accept": "text/plain",
+                },
+                body: JSON.stringify({ organization: orgName, ein }),
+                signal,
+                cache: "no-store",
+                mode: "cors",
+              },
+              (chunk) => {
+                let c = chunk
+                if (!gotFirst) {
+                  c = c.replace(/^# .*?\n+/, "") // strip leading header once
+                  gotFirst = true
+                }
+                buffer += c
+                if (!raf) raf = requestAnimationFrame(flush)
+              }
+            )
+            if (buffer) flush()
+            }
+        } catch (e: any) {
+          // 3) Fallback to non-streaming JSON once
+          try {
+            const r = await fetch("http://localhost:8000/npo/summarize?fmt=json", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ organization: orgName }),
+              signal,
+              cache: "no-store",
+              mode: "cors",
+            })
+            if (r.ok) {
+              const j = await r.json()
+              if (!cancelled) setText(String(j?.summary || ""))
+            } else {
+              if (!cancelled) setError(`AI summary failed (HTTP ${r.status})`)
+            }
+          } catch (err: any) {
+            if (!cancelled) setError(err?.message || "AI summary failed")
+          }
+        } finally {
+          if (!cancelled) setLoading(false)
+        }
+      })
+    }
+
+    // If already visible (IO can miss initial state), start immediately
+    const isNowVisible = () => {
+      const rect = el.getBoundingClientRect()
+      const vh = window.innerHeight || document.documentElement.clientHeight
+      return rect.top <= vh + 200 && rect.bottom >= -200
+    }
+    if (isNowVisible()) startJob()
+
+    // Observe for future visibility
+    const io = new IntersectionObserver(
+      (entries) => entries.forEach((e) => e.isIntersecting && startJob()),
+      { root: null, rootMargin: "300px 0px", threshold: 0 }
+    )
+    io.observe(el)
+
+    return () => {
+      cancelled = true
+      io.disconnect()
+    }
+  }, [orgName])
+
+  return (
+    <div ref={rootRef} className="mt-2">
+      <span className="text-sm font-medium text-muted-foreground">AI Summary:</span>
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+          <Loader2 className="h-4 w-4 animate-spin" /> generating…
+        </div>
+      )}
+      {!!text && <MarkdownViewer text={text} />}
+      {error && <div className="text-xs text-red-600 mt-1">{error}</div>}
+    </div>
+  )
+}
+
+/* =========================================================
+   Main DonationForm
+   ========================================================= */
 export function DonationForm({ onDonationComplete }: DonationFormProps) {
   const [step, setStep] = useState<"select" | "amount" | "payment" | "processing" | "complete">("select")
   const [selectedProgram, setSelectedProgram] = useState<string>("")
@@ -94,16 +280,13 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     paymentMethod: string
   } | null>(null)
 
-  // Load programs, then stream EIN+summary per card
+  // Base cards first (no AI); each card lazily streams its own summary
   useEffect(() => {
     let cancelled = false
-    const controller = new AbortController()
-
-    const run = async () => {
+    ;(async () => {
       try {
         const ngos = await fetchNGOs()
-
-        // 1) Set base cards immediately (fast UI)
+        if (cancelled) return
         const base: NGOProgram[] = ngos.map((n: any) => ({
           account_id: n.account_id,
           name: n.name,
@@ -113,85 +296,16 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
           lifetime_donations: Number(n.lifetime_donations ?? 0),
           created_at: n.created_at,
           xrpl_address: n.address ?? n.xrpl_address ?? "",
-          summary: "",
         }))
-        setPrograms(base)
-
-        // 2) For each, fetch EIN (JSON) then stream summary (text)
-        for (const n of ngos) {
-          const programKey = n.account_id
-
-          // EIN lookup
-          let ein: string | undefined
-          try {
-            const r0 = await fetch("http://localhost:8000/npo/ein", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ organization: n.name }),
-              signal: controller.signal,
-            })
-            if (r0.ok) {
-              const d0: any = await r0.json()
-              ein = d0?.results?.[0]?.ein || undefined
-            }
-          } catch {
-            // ignore EIN failure; we can still summarize from Wikipedia/Wikidata
-          }
-
-          // Stream the summary; throttle UI updates to ~60fps
-          try {
-            let gotFirst = false
-            let buffer = ""
-            let raf: number | null = null
-            const flush = () => {
-              if (cancelled || !buffer) return
-              setPrograms((prev) =>
-                prev.map((p) =>
-                  p.account_id === programKey ? { ...p, summary: (p.summary || "") + buffer } : p
-                )
-              )
-              buffer = ""
-              raf = null
-            }
-
-            await streamText(
-              "http://localhost:8000/npo/summarize", // streams text by default
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ organization: n.name, ein }),
-              },
-              (chunk) => {
-                if (cancelled) return
-                if (!gotFirst) {
-                  // Strip leading "# Org" header if your backend yields it
-                  chunk = chunk.replace(/^# .*?\n+/, "")
-                  gotFirst = true
-                }
-                buffer += chunk
-                if (!raf) raf = requestAnimationFrame(flush)
-              },
-              controller.signal
-            )
-            if (buffer) flush()
-          } catch (err) {
-            console.error("Streaming summary failed:", err)
-          }
-        }
-
-        // Optional: filter after starting streams (or keep full list)
-        setPrograms((prev) => prev.filter((p) => p.status.toLowerCase() === "active"))
+        setPrograms(base.filter((p) => p.status.toLowerCase() === "active"))
       } catch (e) {
         console.error("Failed to load programs:", e)
       } finally {
         if (!cancelled) setIsLoadingPrograms(false)
       }
-    }
-
-    run()
+    })()
     return () => {
       cancelled = true
-      controller.abort()
     }
   }, [])
 
@@ -208,7 +322,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     }
   }
 
-  // ----- XRPL direct (non-Stripe) path -----
+  // XRPL direct (non-Stripe)
   const handlePayXRPL = async () => {
     setIsProcessing(true)
     setStep("processing")
@@ -242,7 +356,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     }
   }
 
-  // ----- After Stripe confirms card -----
+  // After Stripe confirms card
   const handleStripeConfirmed = async (paymentIntentId: string) => {
     setIsProcessing(true)
     setStep("processing")
@@ -285,7 +399,10 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     setDonationResult(null)
   }
 
-  // ----- UI -----
+  /* ================================
+     UI
+     ================================ */
+
   if (step === "select") {
     return (
       <div className="space-y-6">
@@ -314,12 +431,8 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
                   </div>
                   <CardDescription>{program.description}</CardDescription>
 
-                  {!!program.summary && (
-                    <div className="mt-2">
-                      <span className="text-sm font-medium text-muted-foreground">AI Summary:</span>
-                      <MarkdownViewer text={program.summary} />
-                    </div>
-                  )}
+                  {/* Lazy AI summary: queued + streamed only when visible */}
+                  <AISummary orgName={program.name} />
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
@@ -353,22 +466,18 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
   }
 
   if (step === "amount") {
+    const selected = selectedProgramData
     return (
       <Card>
         <CardHeader>
           <CardTitle>Donation Amount</CardTitle>
-          <CardDescription>Supporting: {selectedProgramData?.name}</CardDescription>
+          <CardDescription>Supporting: {selected?.name}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {selectedProgramData?.description && (
-            <p className="text-sm text-muted-foreground">{selectedProgramData.description}</p>
+          {selected?.description && (
+            <p className="text-sm text-muted-foreground">{selected.description}</p>
           )}
-          {!!selectedProgramData?.summary && (
-            <div>
-              <span className="text-sm font-medium text-muted-foreground">AI Summary:</span>
-              <MarkdownViewer text={selectedProgramData.summary} />
-            </div>
-          )}
+          {/* If you want the summary again here, you can render <AISummary orgName={selected?.name!} /> */}
 
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
@@ -422,24 +531,17 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
   }
 
   if (step === "payment") {
+    const selected = selectedProgramData
     return (
       <Card>
         <CardHeader>
           <CardTitle>Payment Details</CardTitle>
           <CardDescription>
-            Donating ${donationAmount} to {selectedProgramData?.name}
+            Donating ${donationAmount} to {selected?.name}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {selectedProgramData?.description && (
-            <p className="text-sm text-muted-foreground">{selectedProgramData.description}</p>
-          )}
-          {!!selectedProgramData?.summary && (
-            <div>
-              <span className="text-sm font-medium text-muted-foreground">AI Summary:</span>
-              <MarkdownViewer text={selectedProgramData.summary} />
-            </div>
-          )}
+          {selected?.description && <p className="text-sm text-muted-foreground">{selected.description}</p>}
 
           <div className="space-y-4">
             <div className="space-y-3">
@@ -483,7 +585,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
                 currency="usd"
                 programId={selectedProgram}
                 email={email}
-                ngoPublicKey={selectedProgramData?.xrpl_address ?? ""}
+                ngoPublicKey={selected?.xrpl_address ?? ""}
                 onConfirmed={handleStripeConfirmed}
               />
             ) : (
