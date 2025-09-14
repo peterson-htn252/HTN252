@@ -7,7 +7,11 @@ import { Camera, CameraOff, CheckCircle } from "lucide-react"
 
 interface CameraViewProps {
   currentStep: string
-  onVerificationComplete?: () => void
+  /**
+   * Callback invoked once the server verifies (or rejects) the face.
+   * Provides `{ success, wallet }` where `wallet` is populated on success.
+   */
+  onVerificationComplete?: (result: { success: boolean; wallet?: any }) => void
 }
 
 export function CameraView({ currentStep, onVerificationComplete }: CameraViewProps) {
@@ -16,6 +20,63 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
   const [cameraEnabled, setCameraEnabled] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [verificationProgress, setVerificationProgress] = useState(0)
+
+  /**
+   * Capture a burst of frames from the webcam and POST them to the
+   * FastAPI server for biometric verification. The server endpoint is
+   * implemented in `routers/face.py` and expects multiple images under
+   * the `files` field.
+   */
+  const verifyFace = async () => {
+    if (!videoRef.current) return
+
+    const canvas = document.createElement("canvas")
+    const ctx = canvas.getContext("2d")
+    const frames: Blob[] = []
+
+    // Capture 5 frames spaced ~200ms apart
+    for (let i = 0; i < 5; i++) {
+      if (!videoRef.current) break
+      canvas.width = videoRef.current.videoWidth
+      canvas.height = videoRef.current.videoHeight
+      ctx?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
+      const blob: Blob = await new Promise((resolve) =>
+        canvas.toBlob((b) => resolve(b as Blob), "image/jpeg")
+      )
+      frames.push(blob)
+      // Update progress to show capture advancement (up to 50%)
+      setVerificationProgress(((i + 1) / 5) * 50)
+      await new Promise((r) => setTimeout(r, 200))
+    }
+
+    const fd = new FormData()
+    frames.forEach((blob, idx) => fd.append("files", blob, `frame_${idx}.jpg`))
+
+    try {
+      const resp = await fetch("http://localhost:8000/face/identify_batch", {
+        method: "POST",
+        body: fd,
+      })
+      const data = await resp.json().catch(() => ({}))
+      const success = resp.ok && Array.isArray(data.matches) && data.matches.length > 0
+      let wallet
+      if (success) {
+        const accountId = data.matches[0].account_id
+        try {
+          const w = await fetch(`/api/wallet/${accountId}`)
+          wallet = await w.json()
+        } catch (e) {
+          console.error("wallet fetch failed", e)
+        }
+      }
+      setVerificationProgress(100)
+      onVerificationComplete?.({ success, wallet })
+    } catch (err) {
+      console.error("Face verification failed", err)
+      setVerificationProgress(100)
+      onVerificationComplete?.({ success: false })
+    }
+  }
 
   const startCamera = async () => {
     try {
@@ -54,23 +115,11 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
 
   useEffect(() => {
     if (currentStep === "verification" && cameraEnabled) {
-      const interval = setInterval(() => {
-        setVerificationProgress((prev) => {
-          const newProgress = prev + Math.random() * 20
-          if (newProgress >= 100) {
-            clearInterval(interval)
-            setTimeout(() => {
-              onVerificationComplete?.()
-            }, 500)
-            return 100
-          }
-          return newProgress
-        })
-      }, 300)
-
-      return () => clearInterval(interval)
+      // Reset progress and begin verification routine once
+      setVerificationProgress(0)
+      verifyFace()
     }
-  }, [currentStep, cameraEnabled, onVerificationComplete])
+  }, [currentStep, cameraEnabled])
 
   useEffect(() => {
     return () => {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,13 +11,34 @@ import type { CheckoutItem, TransactionData } from "./payment-terminal"
 
 interface VendorScreenProps {
   vendorName: string
-  onCheckoutRequest: (data: TransactionData) => void
+  onCheckoutRequest: (data: TransactionData) => Promise<void>
 }
 
 export function VendorScreen({ vendorName, onCheckoutRequest }: VendorScreenProps) {
   const [items, setItems] = useState<CheckoutItem[]>([])
   const [newItemName, setNewItemName] = useState("")
   const [newItemPrice, setNewItemPrice] = useState("")
+  const [status, setStatus] = useState<"idle" | "awaiting" | "complete">("idle")
+  const [result, setResult] = useState<any>(null)
+
+  useEffect(() => {
+    if (status !== "awaiting") return
+
+    const interval = setInterval(async () => {
+      try {
+        const resp = await fetch("/api/checkout/result")
+        const data = await resp.json()
+        if (data.result) {
+          setResult(data.result)
+          setStatus("complete")
+        }
+      } catch (err) {
+        console.error("[v0] Error polling result", err)
+      }
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [status])
 
   const addItem = () => {
     if (newItemName && newItemPrice) {
@@ -53,7 +74,9 @@ export function VendorScreen({ vendorName, onCheckoutRequest }: VendorScreenProp
     }
 
     // Send to terminal
-    onCheckoutRequest(transactionData)
+    await onCheckoutRequest(transactionData)
+    setItems([])
+    setStatus("awaiting")
   }
 
   return (
@@ -71,6 +94,24 @@ export function VendorScreen({ vendorName, onCheckoutRequest }: VendorScreenProp
             </div>
           </div>
         </header>
+
+        {status === "awaiting" && (
+          <Card className="mb-6">
+            <CardContent className="text-center p-6">
+              <p className="text-lg font-medium">Waiting for customer to complete payment...</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {status === "complete" && result && (
+          <Card className="mb-6">
+            <CardContent className="text-center p-6">
+              <p className="text-lg font-medium">
+                {result.success ? "Payment successful – thank you!" : "Payment declined"}
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Add Items */}

@@ -8,9 +8,10 @@ import type { TransactionData } from "./payment-terminal"
 interface TransactionSummaryProps {
   transactionData: TransactionData
   currentStep: string
+  walletDetails?: any
 }
 
-export function TransactionSummary({ transactionData, currentStep }: TransactionSummaryProps) {
+export function TransactionSummary({ transactionData, currentStep, walletDetails }: TransactionSummaryProps) {
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -24,6 +25,8 @@ export function TransactionSummary({ transactionData, currentStep }: Transaction
         return { label: "Ready", color: "secondary" as const }
       case "verification":
         return { label: "Verifying", color: "default" as const }
+      case "wallet":
+        return { label: "Verified", color: "secondary" as const }
       case "processing":
         return { label: "Processing", color: "default" as const }
       case "accepted":
@@ -80,6 +83,23 @@ export function TransactionSummary({ transactionData, currentStep }: Transaction
             </span>
           </div>
         </div>
+
+        {walletDetails && (
+          <div className="space-y-3 pt-4 border-t border-border">
+          {(walletDetails.accountId || walletDetails.account_id) && (
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Account</span>
+              <span className="font-medium">{walletDetails.accountId || walletDetails.account_id}</span>
+            </div>
+          )}
+          {walletDetails.balance !== undefined && (
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Balance</span>
+              <span className="font-medium">${Number(walletDetails.balance).toFixed(2)}</span>
+            </div>
+          )}
+        </div>
+      )}
 
         {/* Status */}
         <div className="flex items-center justify-between pt-4 border-t border-border">

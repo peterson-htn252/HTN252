@@ -24,12 +24,19 @@ export interface TransactionData {
   transactionId?: string
 }
 
-type TerminalStep = "idle" | "checkout" | "verification" | "processing" | "accepted"
+type TerminalStep =
+  | "idle"
+  | "checkout"
+  | "verification"
+  | "wallet"
+  | "processing"
+  | "accepted"
 
 export function PaymentTerminal() {
   const [currentStep, setCurrentStep] = useState<TerminalStep>("idle")
   const [transactionData, setTransactionData] = useState<TransactionData | null>(null)
   const [vendorName, setVendorName] = useState("Block Terminal")
+  const [walletDetails, setWalletDetails] = useState<any>(null)
 
   useEffect(() => {
     const checkForTransaction = async () => {
@@ -63,14 +70,35 @@ export function PaymentTerminal() {
       console.log("[v0] Payment sound played")
     })
 
+    fetch("/api/checkout/result", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ success: true, transaction: transactionData }),
+    }).catch((err) => console.error("[v0] notify vendor fail", err))
+
     setTimeout(() => {
       setCurrentStep("idle")
       setTransactionData(null)
+      setWalletDetails(null)
     }, 3000)
   }
 
   const handleCheckout = () => {
     setCurrentStep("verification")
+  }
+
+  const handleVerificationResult = (result: { success: boolean; wallet?: any }) => {
+    if (result.success) {
+      setWalletDetails(result.wallet || null)
+      setCurrentStep("wallet")
+    } else {
+      fetch("/api/checkout/result", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ success: false }),
+      }).catch((err) => console.error("[v0] notify vendor fail", err))
+      setCurrentStep("checkout")
+    }
   }
 
   if (currentStep === "idle") {
@@ -115,14 +143,20 @@ export function PaymentTerminal() {
                 <CardTitle className="flex items-center gap-2">Customer Verification</CardTitle>
               </CardHeader>
               <CardContent>
-                <CameraView currentStep={currentStep} onVerificationComplete={() => setCurrentStep("processing")} />
+                <CameraView currentStep={currentStep} onVerificationComplete={handleVerificationResult} />
               </CardContent>
             </Card>
           </div>
         )}
 
         <div className={`space-y-6 ${currentStep === "verification" ? "" : "lg:col-span-3"}`}>
-          {transactionData && <TransactionSummary transactionData={transactionData} currentStep={currentStep} />}
+          {transactionData && (
+            <TransactionSummary
+              transactionData={transactionData}
+              currentStep={currentStep}
+              walletDetails={walletDetails}
+            />
+          )}
 
           <PaymentActions
             currentStep={currentStep}
@@ -130,6 +164,7 @@ export function PaymentTerminal() {
             onCheckout={handleCheckout}
             onPaymentComplete={handlePaymentComplete}
             transactionData={transactionData}
+            walletDetails={walletDetails}
           />
         </div>
       </div>

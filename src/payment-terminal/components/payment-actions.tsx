@@ -13,6 +13,7 @@ interface PaymentActionsProps {
   onCheckout: () => void
   onPaymentComplete: () => void
   transactionData: TransactionData | null
+  walletDetails?: any
 }
 
 export function PaymentActions({
@@ -21,6 +22,7 @@ export function PaymentActions({
   onCheckout,
   onPaymentComplete,
   transactionData,
+  walletDetails,
 }: PaymentActionsProps) {
   const [progress, setProgress] = useState(0)
 
@@ -75,6 +77,32 @@ export function PaymentActions({
             <Button onClick={handleCancel} variant="outline" className="w-full bg-transparent">
               <X className="w-4 h-4 mr-2" />
               Cancel
+            </Button>
+          </div>
+        )
+
+      case "wallet":
+        return (
+          <div className="space-y-4">
+            {walletDetails && (
+              <div className="text-center space-y-1">
+              {walletDetails.balance !== undefined && (
+                <p className="text-2xl font-bold">${Number(walletDetails.balance).toFixed(2)}</p>
+              )}
+              {(walletDetails.accountId || walletDetails.account_id) && (
+                <p className="text-sm text-muted-foreground">
+                  Account: {walletDetails.accountId || walletDetails.account_id}
+                </p>
+              )}
+              </div>
+            )}
+            <Button
+              onClick={() => onStepChange("processing")}
+              className="w-full h-12 text-lg font-semibold"
+              size="lg"
+            >
+              <CreditCard className="w-5 h-5 mr-2" />
+              Confirm Payment
             </Button>
           </div>
         )
