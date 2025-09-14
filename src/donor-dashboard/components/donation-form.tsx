@@ -122,64 +122,64 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
           const programKey = n.account_id
 
           // EIN lookup
-          let ein: string | undefined
-          try {
-            const r0 = await fetch("http://localhost:8000/npo/ein", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ organization: n.name }),
-              signal: controller.signal,
-            })
-            if (r0.ok) {
-              const d0: any = await r0.json()
-              ein = d0?.results?.[0]?.ein || undefined
-            }
-          } catch {
-            // ignore EIN failure; we can still summarize from Wikipedia/Wikidata
-          }
+    //       let ein: string | undefined
+    //       try {
+    //         const r0 = await fetch("http://localhost:8000/npo/ein", {
+    //           method: "POST",
+    //           headers: { "Content-Type": "application/json" },
+    //           body: JSON.stringify({ organization: n.name }),
+    //           signal: controller.signal,
+    //         })
+    //         if (r0.ok) {
+    //           const d0: any = await r0.json()
+    //           ein = d0?.results?.[0]?.ein || undefined
+    //         }
+    //       } catch {
+    //         // ignore EIN failure; we can still summarize from Wikipedia/Wikidata
+    //       }
 
-          // Stream the summary; throttle UI updates to ~60fps
-          try {
-            let gotFirst = false
-            let buffer = ""
-            let raf: number | null = null
-            const flush = () => {
-              if (cancelled || !buffer) return
-              setPrograms((prev) =>
-                prev.map((p) =>
-                  p.account_id === programKey ? { ...p, summary: (p.summary || "") + buffer } : p
-                )
-              )
-              buffer = ""
-              raf = null
-            }
+    //       // Stream the summary; throttle UI updates to ~60fps
+    //       try {
+    //         let gotFirst = false
+    //         let buffer = ""
+    //         let raf: number | null = null
+    //         const flush = () => {
+    //           if (cancelled || !buffer) return
+    //           setPrograms((prev) =>
+    //             prev.map((p) =>
+    //               p.account_id === programKey ? { ...p, summary: (p.summary || "") + buffer } : p
+    //             )
+    //           )
+    //           buffer = ""
+    //           raf = null
+    //         }
 
-            await streamText(
-              "http://localhost:8000/npo/summarize", // streams text by default
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ organization: n.name, ein }),
-              },
-              (chunk) => {
-                if (cancelled) return
-                if (!gotFirst) {
-                  // Strip leading "# Org" header if your backend yields it
-                  chunk = chunk.replace(/^# .*?\n+/, "")
-                  gotFirst = true
-                }
-                buffer += chunk
-                if (!raf) raf = requestAnimationFrame(flush)
-              },
-              controller.signal
-            )
-            if (buffer) flush()
-          } catch (err) {
-            console.error("Streaming summary failed:", err)
-          }
+    //         await streamText(
+    //           "http://localhost:8000/npo/summarize", // streams text by default
+    //           {
+    //             method: "POST",
+    //             headers: { "Content-Type": "application/json" },
+    //             body: JSON.stringify({ organization: n.name, ein }),
+    //           },
+    //           (chunk) => {
+    //             if (cancelled) return
+    //             if (!gotFirst) {
+    //               // Strip leading "# Org" header if your backend yields it
+    //               chunk = chunk.replace(/^# .*?\n+/, "")
+    //               gotFirst = true
+    //             }
+    //             buffer += chunk
+    //             if (!raf) raf = requestAnimationFrame(flush)
+    //           },
+    //           controller.signal
+    //         )
+    //         if (buffer) flush()
+    //       } catch (err) {
+    //         console.error("Streaming summary failed:", err)
+    //       }
         }
 
-        // Optional: filter after starting streams (or keep full list)
+    //     // Optional: filter after starting streams (or keep full list)
         setPrograms((prev) => prev.filter((p) => p.status.toLowerCase() === "active"))
       } catch (e) {
         console.error("Failed to load programs:", e)
