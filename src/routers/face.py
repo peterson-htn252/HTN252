@@ -5,7 +5,7 @@ import uuid, json
 
 from core.face import get_face_app, FACE_AVAILABLE
 from core.auth import get_current_ngo
-from core.database import TBL_FACE_MAPS, TBL_PENDING_FACE_MAPS, TBL_ACCOUNTS
+from core.database import TBL_FACE_MAPS, TBL_PENDING_FACE_MAPS, TBL_RECIPIENTS
 from core.utils import now_iso
 
 router = APIRouter()
@@ -205,7 +205,7 @@ async def face_promote(
     row = items[0]
 
     # look up account by name (disambiguate if needed)
-    acct = TBL_ACCOUNTS.scan(
+    acct = TBL_RECIPIENTS.scan(
         FilterExpression="#nm = :nm",
         ExpressionAttributeNames={"#nm": "name"},
         ExpressionAttributeValues={":nm": name},
@@ -217,7 +217,7 @@ async def face_promote(
         raise HTTPException(409, "Multiple accounts share this name. Please disambiguate.")
 
     account = accounts[0]
-    row["account_id"] = account["account_id"]
+    row["recipient_id"] = account["recipient_id"]
     row["ngo_id"] = account.get("ngo_id")
     row["updated_at"] = now_iso()
 
@@ -227,7 +227,7 @@ async def face_promote(
 
     return {
         "face_id": row["face_id"],
-        "account_id": row["account_id"],
+        "recipient_id": row["recipient_id"],
         "ngo_id": row.get("ngo_id"),
     }
 
