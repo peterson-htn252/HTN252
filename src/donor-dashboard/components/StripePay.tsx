@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 
+import { API_URL } from "@/lib/api";
+
 const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = pk ? loadStripe(pk) : Promise.resolve(null);
 
@@ -37,7 +39,7 @@ export function StripePay({
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/payments/stripe", {
+        const res = await fetch(`${API_URL}/donor/payments/stripe`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

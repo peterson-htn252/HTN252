@@ -192,6 +192,51 @@ def convert_usd_to_drops(usd_amount: float) -> int:
     return drops
 
 
+def send_xrp_payment(destination: str, amount_xrp: float) -> Dict[str, str]:
+    """Send XRP from the configured hot wallet to a destination address."""
+
+    if amount_xrp <= 0:
+        raise HTTPException(400, "Invalid XRP amount")
+    if not destination:
+        raise HTTPException(400, "Missing XRPL destination")
+    if not NGO_HOT_SEED or not NGO_HOT_ADDRESS:
+        raise HTTPException(500, "NGO hot wallet not configured")
+
+    if not XRPL_AVAILABLE:
+        # Provide a deterministic hash in development mode where XRPL libs unavailable
+        fake_hash = hashlib.sha256(f"{destination}{amount_xrp}{time.time()}".encode())
+        return {
+            "tx_hash": fake_hash.hexdigest()[:64].upper(),
+            "engine_result": "mock",
+            "via": "mock",
+        }
+
+    client = xrpl_client()
+    if not client:
+        raise HTTPException(500, "XRPL client unavailable")
+
+    try:
+        wallet = Wallet(seed=NGO_HOT_SEED, sequence=0)
+        amount_drops = max(int(amount_xrp * 1_000_000), 1)
+        tx = Payment(
+            account=NGO_HOT_ADDRESS,
+            destination=destination,
+            amount=str(amount_drops),
+        )
+        resp = submit_and_wait(tx, client, wallet)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"XRPL submission failed: {exc}") from exc
+
+    tx_hash = resp.result.get("tx_json", {}).get("hash", "")
+    engine = resp.result.get("engine_result", "")
+    if not tx_hash:
+        raise HTTPException(502, "XRPL transaction returned no hash")
+
+    return {"tx_hash": tx_hash, "engine_result": engine, "via": "xrpl"}
+
+
 def transfer_between_wallets(
     sender_seed: str,
     sender_address: str,
