@@ -255,7 +255,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          paymentIntentId,
+          paymentIntentId: paymentIntentId,
           overrideAddress: selectedProgramData?.xrpl_address || undefined,
         }),
       })

@@ -360,51 +360,6 @@ def fulfill_payment(payload: FulfillRequest) -> Dict[str, Any]:
     }
 
 
-@router.post("/payments/stripe/webhook")
-async def stripe_webhook(request: Request) -> Dict[str, Any]:
-    if not STRIPE_SECRET_KEY or not STRIPE_WEBHOOK_SECRET:
-        raise HTTPException(status_code=500, detail="Stripe webhook not configured")
-
-    body = await request.body()
-    signature = request.headers.get("stripe-signature")
-
-    try:
-        stripe.api_key = STRIPE_SECRET_KEY
-        event = stripe.Webhook.construct_event(body, signature, STRIPE_WEBHOOK_SECRET)
-    except (ValueError, stripe.error.StripeError) as exc:  # type: ignore[attr-defined]
-        raise HTTPException(status_code=400, detail=f"Webhook Error: {exc}") from exc
-
-    event_type = event.get("type")
-    if event_type == "payment_intent.succeeded":
-        pi = _stripe_to_dict(event.get("data", {}).get("object"))
-        metadata = _stripe_to_dict(pi.get("metadata"))
-        program_id = metadata.get("programId")
-        override = metadata.get("ngoAddress")
-        amount_xrp = ((pi.get("amount_received") or pi.get("amount") or 0) / 100.0)
-
-        logger.info(
-            "[webhook] payment_intent.succeeded amount=%s programId=%s", amount_xrp, program_id
-        )
-
-        destination, raw_used = _resolve_destination(program_id, override, metadata)
-        result = onramp_via_faucet(
-            destination,
-            amount_xrp,
-            memos={
-                "Program": program_id,
-            },
-        )
-        logger.info(
-            "[webhook] sent XRP dest=%s tx=%s via=%s raw=%s",
-            destination,
-            result.get("tx_hash"),
-            result.get("via"),
-            raw_used,
-        )
-
-    return {"ok": True}
-
-
 @router.post("/xrpl/send-dev")
 def send_dev_payment(payload: SendDevRequest) -> Dict[str, Any]:
     destination = _normalize_address(payload.to)

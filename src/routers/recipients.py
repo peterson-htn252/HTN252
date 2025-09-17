@@ -16,13 +16,12 @@ from core.database import (
     TBL_RECIPIENTS,
     TBL_WALLETS,
 )
-from core.xrpl import make_challenge, verify_challenge, XRPL_AVAILABLE
+from core.xrpl import make_challenge, verify_challenge
 from core.config import XRPL_NETWORK
 from core.utils import now_iso
 
 # Import XRPL wallet generation
-if XRPL_AVAILABLE:
-    from xrpl.wallet import Wallet as XRPLWallet
+from xrpl.wallet import Wallet as XRPLWallet
 
 router = APIRouter()
 

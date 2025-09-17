@@ -1,3 +1,4 @@
+import functools
 import uuid
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
@@ -152,6 +153,7 @@ def get_current_account(current_user: dict = Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@functools.lru_cache()
 @router.get("/accounts/ngos", tags=["accounts"])
 def get_all_ngo_accounts():
     """
@@ -162,10 +164,7 @@ def get_all_ngo_accounts():
             ExpressionAttributeValues={":account_type": "NGO"}
         )
 
-    return response
     try:
-        
-
         ngo_accounts: List[NGOAccountSummary] = []
         for item in response.get("Items", []):
             # Safely derive an XRPL address from the stored public_key (may be None for legacy rows)

@@ -20,25 +20,13 @@ DROPS_PER_XRP = 1_000_000
 FAUCET_NETWORKS = {"TESTNET", "DEVNET"}
 
 # XRPL optional imports
-try:
-    from xrpl.clients import JsonRpcClient
-    from xrpl.wallet import Wallet, generate_faucet_wallet
-    from xrpl.core.keypairs import derive_classic_address
-    from xrpl.models.requests import AccountInfo
-    from xrpl.models.transactions import Payment, Memo
-    from xrpl.transaction import submit_and_wait
-    XRPL_AVAILABLE = True
-except Exception:
-    JsonRpcClient = None  # type: ignore
-    Wallet = None  # type: ignore
-    generate_faucet_wallet = None  # type: ignore
-    derive_classic_address = None  # type: ignore
-    AccountInfo = None  # type: ignore
-    Payment = None  # type: ignore
-    Memo = None  # type: ignore
-    submit_and_wait = None  # type: ignore
-    get_balance = None  # type: ignore
-    XRPL_AVAILABLE = False
+from xrpl.clients import JsonRpcClient
+from xrpl.wallet import Wallet, generate_faucet_wallet
+from xrpl.core.keypairs import derive_classic_address
+from xrpl.models.requests import AccountInfo
+from xrpl.models.transactions import Payment, Memo
+from xrpl.transaction import submit_and_wait, autofill_and_sign
+from xrpl.utils import drops_to_xrp, xrp_to_drops
 
 
 # ---------------- core helpers ----------------
@@ -64,8 +52,6 @@ def get_quote(from_currency: str, to_currency: str, amount_minor: int):
     )
 
 def _client() -> Optional["JsonRpcClient"]:
-    if not XRPL_AVAILABLE:
-        return None
     return JsonRpcClient(XRPL_RPC_URL)
 
 def _sha256_hex(s: str) -> str:
@@ -74,11 +60,6 @@ def _sha256_hex(s: str) -> str:
 def _mock_tx_hash(*parts: object) -> str:
     seed = f"{time.time()}::{uuid.uuid4()}::" + "::".join(map(str, parts))
     return _sha256_hex(seed)[:64].upper()
-
-def _drops(amount_xrp: float) -> int:
-    if amount_xrp <= 0:
-        raise HTTPException(400, "Amount must be positive")
-    return max(int(amount_xrp * DROPS_PER_XRP), 1)
 
 def _memos(m: Optional[Dict[str, str]]) -> Optional[List["Memo"]]:
     if not m:
@@ -89,6 +70,14 @@ def _memos(m: Optional[Dict[str, str]]) -> Optional[List["Memo"]]:
     return out or None
 
 def _submit(tx: "Payment", client: "JsonRpcClient", wallet: "Wallet") -> str:
+    signed_tx = autofill_and_sign(
+        tx, client, wallet)
+    max_ledger = signed_tx.last_ledger_sequence
+    tx_id = signed_tx.get_hash()
+    print("Signed transaction:", signed_tx)
+    print("Transaction cost:", drops_to_xrp(signed_tx.fee), "XRP")
+    print("Transaction expires after ledger:", max_ledger)
+    print("Identifying hash:", tx_id)
     try:
         resp = submit_and_wait(tx, client, wallet)  # type: ignore[name-defined]
     except Exception as exc:
@@ -128,7 +117,7 @@ def convert_drops_to_usd(drops: int) -> float:
     return round((drops / DROPS_PER_XRP) * XRPL_USD_RATE, 2)
 
 def derive_address_from_public_key(public_key: str) -> Optional[str]:
-    if XRPL_AVAILABLE and derive_classic_address is not None:
+    if derive_classic_address is not None:
         try:
             return derive_classic_address(public_key)
         except Exception as exc:
@@ -140,7 +129,7 @@ def derive_address_from_public_key(public_key: str) -> Optional[str]:
 def fetch_xrp_balance_drops(classic_address: str) -> Optional[int]:
     if not classic_address or not classic_address.startswith("r"):
         return None
-    if not XRPL_AVAILABLE or AccountInfo is None:
+    if AccountInfo is None:
         return 0
     client = _client()
     if client is None:
@@ -159,7 +148,7 @@ def create_faucet_wallet():
     """
     Returns a Wallet funded by the Testnet or Devnet faucet.
     """
-    if not XRPL_AVAILABLE or generate_faucet_wallet is None:
+    if generate_faucet_wallet is None:
         # Dev fallback: minimal mock that looks like a Wallet for logging and routing
         class _Mock:
             classic_address = "r" + _sha256_hex("mock_faucet")[:32]
@@ -199,10 +188,7 @@ def wallet_to_wallet_send(
     if not sender_seed or not sender_address or not destination:
         raise HTTPException(400, "Missing sender or destination info")
 
-    amt = _drops(amount_xrp)
-
-    if not XRPL_AVAILABLE:
-        return _mock_tx_hash("send", sender_address, destination, amt)
+    amt = xrp_to_drops(amount_xrp)
 
     client = _client()
     if client is None:
@@ -234,6 +220,7 @@ def onramp_via_faucet(
     if not destination:
         raise HTTPException(400, "Missing destination")
     faucet = create_faucet_wallet()
+    logger.debug("Faucet wallet created: %s", faucet.classic_address)  # type: ignore[attr-defined]
     return wallet_to_wallet_send(
         sender_seed=faucet.seed,                 # type: ignore[attr-defined]
         sender_address=faucet.classic_address,  # type: ignore[attr-defined]
