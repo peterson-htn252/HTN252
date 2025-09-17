@@ -78,7 +78,7 @@ def pay_offramp_on_xrpl(amount_drops: int, memos: Dict[str, str]) -> str:
     if not NGO_HOT_SEED or not NGO_HOT_ADDRESS:
         raise HTTPException(500, "NGO hot wallet not configured")
     client = xrpl_client()
-    wallet = Wallet(seed=NGO_HOT_SEED, sequence=0)  # DEV ONLY
+    wallet = Wallet.from_seed(seed=NGO_HOT_SEED)
     memo_objs: List[Memo] = []
     for k, v in memos.items():
         memo_objs.append(Memo(memo_data=v.encode().hex(), memo_type=k.encode().hex()))
@@ -216,7 +216,7 @@ def send_xrp_payment(destination: str, amount_xrp: float) -> Dict[str, str]:
         raise HTTPException(500, "XRPL client unavailable")
 
     try:
-        wallet = Wallet(seed=NGO_HOT_SEED, sequence=0)
+        wallet = Wallet.from_seed(seed=NGO_HOT_SEED)
         amount_drops = max(int(amount_xrp * 1_000_000), 1)
         tx = Payment(
             account=NGO_HOT_ADDRESS,
@@ -279,7 +279,7 @@ def transfer_between_wallets(
         amount_drops = convert_usd_to_drops(amount_usd)
         
         # Create wallet from seed
-        wallet = Wallet(seed=sender_seed, sequence=0)
+        wallet = Wallet.from_seed(seed=sender_seed)
         
         # Create memo if provided
         memo_objs: List[Memo] = []
@@ -305,7 +305,7 @@ def transfer_between_wallets(
             return resp.result.get("tx_json", {}).get("hash", "")
         else:
             return None
-            
+
     except Exception as e:
         print(f"Error in transfer_between_wallets: {str(e)}")
         # Fallback to mock transaction hash

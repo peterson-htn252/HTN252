@@ -260,6 +260,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
         }),
       })
       const data = await r.json()
+      console.log("Fulfill response:", data, r)
       if (!r.ok) throw new Error(data.error || "Fulfillment failed")
 
       setDonationResult({
