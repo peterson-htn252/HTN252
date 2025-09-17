@@ -17,7 +17,7 @@ from core.config import (
     XRPL_FALLBACK_ADDRESS,
 )
 from core.database import TBL_ACCOUNTS, TBL_PROGRAMS
-from core.xrpl import derive_address_from_public_key, send_xrp_payment
+from core.xrpl import derive_address_from_public_key, onramp_via_faucet, wallet_to_wallet_send
 
 try:  # xrpl address helpers are optional in some environments
     from xrpl.core.addresscodec import (
@@ -343,12 +343,17 @@ def fulfill_payment(payload: FulfillRequest) -> Dict[str, Any]:
         raw_used,
     )
 
-    result = send_xrp_payment(destination, amount_xrp)
+    tx_hash = onramp_via_faucet(
+        destination,
+        amount_xrp,
+        memos={
+            "Program": program_id,
+            "DonationId": payload.paymentIntentId,
+        },
+    )
     return {
         "ok": True,
-        "txHash": result.get("tx_hash"),
-        "engine_result": result.get("engine_result"),
-        "via": result.get("via"),
+        "txHash": tx_hash,
         "toAddress": destination,
         "programId": program_id,
         "donationId": payload.paymentIntentId,
@@ -382,7 +387,13 @@ async def stripe_webhook(request: Request) -> Dict[str, Any]:
         )
 
         destination, raw_used = _resolve_destination(program_id, override, metadata)
-        result = send_xrp_payment(destination, amount_xrp)
+        result = onramp_via_faucet(
+            destination,
+            amount_xrp,
+            memos={
+                "Program": program_id,
+            },
+        )
         logger.info(
             "[webhook] sent XRP dest=%s tx=%s via=%s raw=%s",
             destination,
@@ -400,7 +411,9 @@ def send_dev_payment(payload: SendDevRequest) -> Dict[str, Any]:
     if not destination:
         raise HTTPException(status_code=400, detail="Invalid 'to' address (must be XRPL classic)")
 
-    result = send_xrp_payment(destination, payload.amountXrp)
+    sender_address = ""
+    sender_seed = ""
+    result = wallet_to_wallet_send(sender_seed, sender_address, destination, payload.amountXrp)
     return {
         "ok": True,
         "txHash": result.get("tx_hash"),

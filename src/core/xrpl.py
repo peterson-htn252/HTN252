@@ -1,316 +1,267 @@
+import hashlib
+import hmac
+import logging
 import time
 import uuid
-import hmac
-import hashlib
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, TypedDict
 
 from fastapi import HTTPException
 
 from .config import (
     XRPL_RPC_URL,
-    XRPL_NETWORK,
-    NGO_HOT_SEED,
-    NGO_HOT_ADDRESS,
-    OFFRAMP_DEPOSIT_ADDRESS,
-    OFFRAMP_DEST_TAG,
+    XRPL_NETWORK,              # "TESTNET" or "DEVNET" if using faucet
     SECRET_KEY,
     XRPL_USD_RATE,
 )
 
+logger = logging.getLogger(__name__)
+
+DROPS_PER_XRP = 1_000_000
+FAUCET_NETWORKS = {"TESTNET", "DEVNET"}
+
+# XRPL optional imports
 try:
     from xrpl.clients import JsonRpcClient
-    from xrpl.wallet import Wallet
+    from xrpl.wallet import Wallet, generate_faucet_wallet
     from xrpl.core.keypairs import derive_classic_address
     from xrpl.models.requests import AccountInfo
     from xrpl.models.transactions import Payment, Memo
     from xrpl.transaction import submit_and_wait
     XRPL_AVAILABLE = True
 except Exception:
-    XRPL_AVAILABLE = False
     JsonRpcClient = None  # type: ignore
     Wallet = None  # type: ignore
+    generate_faucet_wallet = None  # type: ignore
     derive_classic_address = None  # type: ignore
     AccountInfo = None  # type: ignore
     Payment = None  # type: ignore
     Memo = None  # type: ignore
     submit_and_wait = None  # type: ignore
+    get_balance = None  # type: ignore
+    XRPL_AVAILABLE = False
 
 
-def make_challenge(recipient_id: str, address: str) -> str:
-    msg = f"link:{recipient_id}:{address}:{int(time.time()//300)}"
-    mac = hmac.new(SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()
-    return f"{msg}:{mac}"
+# ---------------- core helpers ----------------
 
+def get_quote(from_currency: str, to_currency: str, amount_minor: int):
+    if from_currency != "XRP" or to_currency != "USD":
+        raise HTTPException(400, "Only XRP to USD quotes are supported")
+    if amount_minor <= 0:
+        raise HTTPException(400, "Amount must be positive")
+    amount_major = amount_minor / 100.0
+    rate_ppm = int((XRPL_USD_RATE / 1.0) * 1_000_000)  # Assuming USD
+    deliver_min = int(amount_minor * 0.99)  # Assume 1% slippage
+    send_max = int((amount_major / XRPL_USD_RATE) * DROPS_PER_XRP * 1.01)  # Assume 1% slippage
+    quote_id = str(uuid.uuid4())
+    return Quote(
+        quote_id=quote_id,
+        from_currency=from_currency,
+        to_currency=to_currency,
+        amount_minor=amount_minor,
+        rate_ppm=rate_ppm,
+        deliver_min=deliver_min,
+        send_max=send_max,
+    )
 
-def verify_challenge(signature: str, recipient_id: str, address: str) -> bool:
-    expected = make_challenge(recipient_id, address)
-    return hmac.compare_digest(signature, expected)
-
-
-def xrpl_client() -> Optional[JsonRpcClient]:
+def _client() -> Optional["JsonRpcClient"]:
     if not XRPL_AVAILABLE:
         return None
     return JsonRpcClient(XRPL_RPC_URL)
 
+def _sha256_hex(s: str) -> str:
+    return hashlib.sha256(s.encode()).hexdigest()
 
-def get_quote(from_currency: str, to_currency: str, amount_minor: int) -> dict:
-    rate_ppm = 1_000_000
-    deliver_min = amount_minor
-    send_max = int(amount_minor * 1.003)
-    return {
-        "quote_id": str(uuid.uuid4()),
-        "from_currency": from_currency,
-        "to_currency": to_currency,
-        "amount_minor": amount_minor,
-        "rate_ppm": rate_ppm,
-        "deliver_min": deliver_min,
-        "send_max": send_max,
-    }
+def _mock_tx_hash(*parts: object) -> str:
+    seed = f"{time.time()}::{uuid.uuid4()}::" + "::".join(map(str, parts))
+    return _sha256_hex(seed)[:64].upper()
 
-
-def to_drops(xrp_minor: int) -> int:
-    return int(xrp_minor)
-
-
-def pay_offramp_on_xrpl(amount_drops: int, memos: Dict[str, str]) -> str:
-    if not XRPL_AVAILABLE:
-        return "tx_placeholder_hash_no_xrpl"
-    if not NGO_HOT_SEED or not NGO_HOT_ADDRESS:
-        raise HTTPException(500, "NGO hot wallet not configured")
-    client = xrpl_client()
-    wallet = Wallet.from_seed(seed=NGO_HOT_SEED)
-    memo_objs: List[Memo] = []
-    for k, v in memos.items():
-        memo_objs.append(Memo(memo_data=v.encode().hex(), memo_type=k.encode().hex()))
-    dest = OFFRAMP_DEPOSIT_ADDRESS or NGO_HOT_ADDRESS
-    tx = Payment(
-        account=NGO_HOT_ADDRESS,
-        destination=dest,
-        amount=str(amount_drops),
-        destination_tag=OFFRAMP_DEST_TAG or None,
-        memos=memo_objs,
-    )
-    resp = submit_and_wait(tx, client, wallet)
-    return resp.result.get("tx_json", {}).get("hash", "")
-
-
-def derive_address_from_public_key(public_key: str) -> Optional[str]:
-    if not XRPL_AVAILABLE or not derive_classic_address:
-        # For development/testing, generate a mock address from the public key
-        if public_key.startswith("ED"):
-            # Generate a deterministic mock address for testing
-            import hashlib
-            hash_obj = hashlib.sha256(public_key.encode())
-            hex_hash = hash_obj.hexdigest()
-            # Generate a mock classic address format (starts with 'r')
-            return f"r{hex_hash[:32]}"
-        return None
-    try:
-        return derive_classic_address(public_key)
-    except Exception as e:
-        print(f"Error deriving address from public key {public_key}: {str(e)}")
-        # For development/testing, generate a mock address from the public key
-        if public_key.startswith("ED"):
-            import hashlib
-            hash_obj = hashlib.sha256(public_key.encode())
-            hex_hash = hash_obj.hexdigest()
-            return f"r{hex_hash[:32]}"
-        return None
-
-
-def fetch_xrp_balance_drops(classic_address: str) -> Optional[int]:
-    if not XRPL_AVAILABLE or not AccountInfo:
-        # In development, treat unfunded accounts as having zero balance
-        if classic_address and classic_address.startswith("r"):
-            return 0
-        return None
-    client = xrpl_client()
-    if not client:
-        return None
-    try:
-        req = AccountInfo(account=classic_address, ledger_index="validated")
-        resp = client.request(req).result
-        return int(resp["account_data"]["Balance"])  # drops
-    except Exception:
-        # If the account cannot be retrieved (e.g. unfunded), report zero balance
-        if classic_address and classic_address.startswith("r"):
-            return 0
-        return None
-
-
-def convert_drops_to_usd(drops: int) -> float:
-    # 1 XRP = 1_000_000 drops
-    xrp = drops / 1_000_000
-    return round(xrp * XRPL_USD_RATE, 2)
-
-
-def create_new_wallet() -> Dict[str, str]:
-    """
-    Create a new XRPL wallet and return the public and private keys.
-    
-    Returns:
-        Dict with 'public_key' and 'private_key' fields, or fallback keys if XRPL unavailable
-    """
-    if not XRPL_AVAILABLE:
-        # Generate deterministic fallback keys for development
-        import hashlib
-        import time
-        seed = f"{time.time()}{uuid.uuid4()}"
-        hash_obj = hashlib.sha256(seed.encode())
-        hex_hash = hash_obj.hexdigest()
-        return {
-            "public_key": f"ED{hex_hash[:62].upper()}",
-            "private_key": f"ED{hex_hash[32:94].upper()}"
-        }
-    
-    try:
-        wallet = Wallet.create()
-        return {
-            "public_key": wallet.public_key,
-            "private_key": wallet.private_key
-        }
-    except Exception as e:
-        print(f"Failed to create XRPL wallet: {str(e)}")
-        # Generate deterministic fallback keys
-        import hashlib
-        import time
-        seed = f"{time.time()}{uuid.uuid4()}"
-        hash_obj = hashlib.sha256(seed.encode())
-        hex_hash = hash_obj.hexdigest()
-        return {
-            "public_key": f"ED{hex_hash[:62].upper()}",
-            "private_key": f"ED{hex_hash[32:94].upper()}"
-        }
-
-
-def convert_usd_to_drops(usd_amount: float) -> int:
-    """Convert USD amount to XRP drops."""
-    # Convert USD to XRP
-    xrp = usd_amount / XRPL_USD_RATE
-    # Convert XRP to drops (1 XRP = 1_000_000 drops)
-    drops = int(xrp * 1_000_000)
-    return drops
-
-
-def send_xrp_payment(destination: str, amount_xrp: float) -> Dict[str, str]:
-    """Send XRP from the configured hot wallet to a destination address."""
-
+def _drops(amount_xrp: float) -> int:
     if amount_xrp <= 0:
-        raise HTTPException(400, "Invalid XRP amount")
-    if not destination:
-        raise HTTPException(400, "Missing XRPL destination")
-    if not NGO_HOT_SEED or not NGO_HOT_ADDRESS:
-        raise HTTPException(500, "NGO hot wallet not configured")
+        raise HTTPException(400, "Amount must be positive")
+    return max(int(amount_xrp * DROPS_PER_XRP), 1)
 
-    if not XRPL_AVAILABLE:
-        # Provide a deterministic hash in development mode where XRPL libs unavailable
-        fake_hash = hashlib.sha256(f"{destination}{amount_xrp}{time.time()}".encode())
-        return {
-            "tx_hash": fake_hash.hexdigest()[:64].upper(),
-            "engine_result": "mock",
-            "via": "mock",
-        }
+def _memos(m: Optional[Dict[str, str]]) -> Optional[List["Memo"]]:
+    if not m:
+        return None
+    out: List["Memo"] = []
+    for k, v in m.items():
+        out.append(Memo(memo_type=str(k).encode().hex(), memo_data=str(v).encode().hex()))  # type: ignore[name-defined]
+    return out or None
 
-    client = xrpl_client()
-    if not client:
-        raise HTTPException(500, "XRPL client unavailable")
-
+def _submit(tx: "Payment", client: "JsonRpcClient", wallet: "Wallet") -> str:
     try:
-        wallet = Wallet.from_seed(seed=NGO_HOT_SEED)
-        amount_drops = max(int(amount_xrp * 1_000_000), 1)
-        tx = Payment(
-            account=NGO_HOT_ADDRESS,
-            destination=destination,
-            amount=str(amount_drops),
-        )
-        resp = submit_and_wait(tx, client, wallet)
-    except HTTPException:
-        raise
+        resp = submit_and_wait(tx, client, wallet)  # type: ignore[name-defined]
     except Exception as exc:
         raise HTTPException(502, f"XRPL submission failed: {exc}") from exc
-
     tx_hash = resp.result.get("tx_json", {}).get("hash", "")
-    engine = resp.result.get("engine_result", "")
     if not tx_hash:
         raise HTTPException(502, "XRPL transaction returned no hash")
+    return tx_hash
 
-    return {"tx_hash": tx_hash, "engine_result": engine, "via": "xrpl"}
+
+# ---------------- minimal utilities you still use ----------------
+
+class Quote(TypedDict):
+    quote_id: str
+    from_currency: str
+    to_currency: str
+    amount_minor: int
+    rate_ppm: int
+    deliver_min: int
+    send_max: int
+
+def make_challenge(recipient_id: str, address: str) -> str:
+    bucket = int(time.time() // 300)
+    msg = f"link:{recipient_id}:{address}:{bucket}"
+    mac = hmac.new(SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()
+    return f"{msg}:{mac}"
+
+def verify_challenge(signature: str, recipient_id: str, address: str) -> bool:
+    return hmac.compare_digest(signature, make_challenge(recipient_id, address))
+
+def convert_usd_to_drops(usd_amount: float) -> int:
+    if usd_amount < 0:
+        raise HTTPException(400, "Amount must be nonnegative")
+    return int((usd_amount / XRPL_USD_RATE) * DROPS_PER_XRP)
+
+def convert_drops_to_usd(drops: int) -> float:
+    return round((drops / DROPS_PER_XRP) * XRPL_USD_RATE, 2)
+
+def derive_address_from_public_key(public_key: str) -> Optional[str]:
+    if XRPL_AVAILABLE and derive_classic_address is not None:
+        try:
+            return derive_classic_address(public_key)
+        except Exception as exc:
+            logger.debug("derive_classic_address failed: %s", exc)
+    if public_key.startswith("ED"):
+        return "r" + _sha256_hex(public_key)[:32]
+    return None
+
+def fetch_xrp_balance_drops(classic_address: str) -> Optional[int]:
+    if not classic_address or not classic_address.startswith("r"):
+        return None
+    if not XRPL_AVAILABLE or AccountInfo is None:
+        return 0
+    client = _client()
+    if client is None:
+        return None
+    try:
+        req = AccountInfo(account=classic_address, ledger_index="validated")  # type: ignore[name-defined]
+        resp = client.request(req).result
+        return int(resp["account_data"]["Balance"])
+    except Exception:
+        return 0
 
 
-def transfer_between_wallets(
+# ---------------- single faucet creator ----------------
+
+def create_faucet_wallet():
+    """
+    Returns a Wallet funded by the Testnet or Devnet faucet.
+    """
+    if not XRPL_AVAILABLE or generate_faucet_wallet is None:
+        # Dev fallback: minimal mock that looks like a Wallet for logging and routing
+        class _Mock:
+            classic_address = "r" + _sha256_hex("mock_faucet")[:32]
+            seed = "s" + _sha256_hex("mock_seed")[:28]
+        return _Mock()  # type: ignore[return-value]
+
+    if XRPL_NETWORK.upper() not in FAUCET_NETWORKS:
+        raise HTTPException(500, "Faucet is only allowed on TESTNET or DEVNET")
+
+    client = _client()
+    if client is None:
+        # deterministic mock
+        class _Mock:
+            classic_address = "r" + _sha256_hex("mock_faucet")[:32]
+            seed = "s" + _sha256_hex("mock_seed")[:28]
+        return _Mock()  # type: ignore[return-value]
+
+    w = generate_faucet_wallet(client, debug=False)
+    return w
+
+
+# ---------------- one canonical send ----------------
+
+def wallet_to_wallet_send(
     sender_seed: str,
     sender_address: str,
-    recipient_address: str,
-    amount_usd: float,
-    memo: Optional[str] = None
-) -> Optional[str]:
+    destination: str,
+    amount_xrp: float,
+    *,
+    dest_tag: Optional[int] = None,
+    memos: Optional[Dict[str, str]] = None,
+) -> str:
     """
-    Transfer funds from one wallet to another on the XRPL.
-    
-    Args:
-        sender_seed: The seed (private key) of the sender's wallet
-        sender_address: The classic address of the sender
-        recipient_address: The classic address of the recipient
-        amount_usd: The amount in USD to transfer
-        memo: Optional memo for the transaction
-        
-    Returns:
-        Transaction hash if successful, None if failed
+    Single canonical send used by both on-ramp and off-ramp flows.
+    Returns transaction hash. Uses deterministic mock if XRPL libs are missing.
     """
-    if not XRPL_AVAILABLE:
-        # For development/testing, generate a mock transaction hash
-        import hashlib
-        import time
-        tx_data = f"{sender_address}{recipient_address}{amount_usd}{time.time()}"
-        hash_obj = hashlib.sha256(tx_data.encode())
-        return hash_obj.hexdigest()[:64].upper()
-    
-    try:
-        client = xrpl_client()
-        if not client:
-            # Fallback to mock transaction hash
-            import hashlib
-            import time
-            tx_data = f"{sender_address}{recipient_address}{amount_usd}{time.time()}"
-            hash_obj = hashlib.sha256(tx_data.encode())
-            return hash_obj.hexdigest()[:64].upper()
-            
-        # Convert USD to drops
-        amount_drops = convert_usd_to_drops(amount_usd)
-        
-        # Create wallet from seed
-        wallet = Wallet.from_seed(seed=sender_seed)
-        
-        # Create memo if provided
-        memo_objs: List[Memo] = []
-        if memo:
-            memo_objs.append(Memo(
-                memo_data=memo.encode().hex(),
-                memo_type="text/plain".encode().hex()
-            ))
-        
-        # Create payment transaction
-        tx = Payment(
-            account=sender_address,
-            destination=recipient_address,
-            amount=str(amount_drops),
-            memos=memo_objs if memo_objs else None,
-        )
-        
-        # Submit and wait for transaction
-        resp = submit_and_wait(tx, client, wallet)
-        
-        # Check if transaction was successful
-        if resp.result.get("validated"):
-            return resp.result.get("tx_json", {}).get("hash", "")
-        else:
-            return None
+    if not sender_seed or not sender_address or not destination:
+        raise HTTPException(400, "Missing sender or destination info")
 
-    except Exception as e:
-        print(f"Error in transfer_between_wallets: {str(e)}")
-        # Fallback to mock transaction hash
-        import hashlib
-        import time
-        tx_data = f"{sender_address}{recipient_address}{amount_usd}{time.time()}"
-        hash_obj = hashlib.sha256(tx_data.encode())
-        return hash_obj.hexdigest()[:64].upper()
+    amt = _drops(amount_xrp)
+
+    if not XRPL_AVAILABLE:
+        return _mock_tx_hash("send", sender_address, destination, amt)
+
+    client = _client()
+    if client is None:
+        return _mock_tx_hash("send", sender_address, destination, amt)
+
+    wallet = Wallet.from_seed(seed=sender_seed)  # type: ignore[union-attr]
+    tx = Payment(  # type: ignore[name-defined]
+        account=sender_address,
+        destination=destination,
+        amount=str(amt),
+        destination_tag=dest_tag,
+        memos=_memos(memos),
+    )
+    return _submit(tx, client, wallet)
+
+
+# ---------------- on-ramp and off-ramp built on the sender ----------------
+
+def onramp_via_faucet(
+    destination: str,
+    amount_xrp: float,
+    *,
+    dest_tag: Optional[int] = None,
+    memos: Optional[Dict[str, str]] = None,
+) -> str:
+    """
+    Create a faucet wallet, then send to the given destination. Returns tx hash.
+    """
+    if not destination:
+        raise HTTPException(400, "Missing destination")
+    faucet = create_faucet_wallet()
+    return wallet_to_wallet_send(
+        sender_seed=faucet.seed,                 # type: ignore[attr-defined]
+        sender_address=faucet.classic_address,  # type: ignore[attr-defined]
+        destination=destination,
+        amount_xrp=amount_xrp,
+        dest_tag=dest_tag,
+        memos=memos,
+    )
+
+def offramp_via_faucet(
+    source_seed: str,
+    source_address: str,
+    amount_xrp: float,
+    *,
+    memos: Optional[Dict[str, str]] = None,
+) -> str:
+    """
+    Create a faucet wallet, then send from the given source wallet to the faucet wallet.
+    Returns tx hash. The faucet acts as the receiving sink for tests.
+    """
+    if not source_seed or not source_address:
+        raise HTTPException(400, "Missing source wallet info")
+    faucet = create_faucet_wallet()
+    return wallet_to_wallet_send(
+        sender_seed=source_seed,
+        sender_address=source_address,
+        destination=faucet.classic_address,     # type: ignore[attr-defined]
+        amount_xrp=amount_xrp,
+        dest_tag=None,
+        memos=memos,
+    )

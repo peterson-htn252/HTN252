@@ -4,16 +4,13 @@ from fastapi import APIRouter, HTTPException
 from models import QuoteRequest, RedeemBody, StorePayoutMethod, StorePayoutBody, WalletBalanceUSDRequest
 from core.xrpl import (
     get_quote,
-    pay_offramp_on_xrpl,
-    to_drops,
+    offramp_via_faucet,
     derive_address_from_public_key,
     fetch_xrp_balance_drops,
     convert_drops_to_usd,
-    transfer_between_wallets,
     convert_usd_to_drops,
 )
 from core.database import TBL_RECIPIENTS, TBL_PAYOUTS, TBL_STORE_METHODS, TBL_MOVES
-from core.config import NGO_HOT_ADDRESS
 from core.utils import now_iso
 
 router = APIRouter()
@@ -60,33 +57,12 @@ def redeem(body: RedeemBody):
         raise HTTPException(400, f"Insufficient XRPL wallet balance. Available: ${recipient_balance_usd:.2f}, Required: ${amount_usd:.2f}")
     
     # Get NGO/store destination address (for now, use NGO hot address)
-    destination_address = NGO_HOT_ADDRESS
-    if not destination_address:
-        raise HTTPException(500, "Store/NGO destination address not configured")
-    
-    # Create memo for the transaction
-    memo_text = f"Payment: {body.voucher_id} | Store: {body.store_id} | Program: {body.program_id}"
-    
-    # Transfer from recipient's XRPL wallet to store/NGO wallet
-    try:
-        tx_hash = transfer_between_wallets(
-            sender_seed=recipient_private_key,
-            sender_address=recipient_address,
-            recipient_address=destination_address,
-            amount_usd=amount_usd,
-            memo=memo_text
-        )
-        
-        if not tx_hash:
-            raise HTTPException(500, "XRPL transaction failed")
-            
-    except Exception as e:
-        raise HTTPException(500, f"XRPL transfer failed: {str(e)}")
-    
+    tx_hash = offramp_via_faucet(recipient_private_key, recipient_address, amount_usd, memos={"Redeem": body.voucher_id, "Store": body.store_id, "Program": body.program_id})
+
     # Create quote and payout record
     quote = get_quote("XRP", body.currency, body.amount_minor)
     payout_id = str(uuid.uuid4())
-    
+
     # Store payout record
     TBL_PAYOUTS.put_item(Item={
         "payout_id": payout_id,
@@ -100,7 +76,7 @@ def redeem(body: RedeemBody):
         "status": "completed",  # Mark as completed since we did the transfer
         "created_at": now_iso(),
     })
-    
+
     # Update recipient's database balance to reflect the XRPL transfer
     current_db_balance = recipient.get("balance", 0.0)
     new_db_balance = current_db_balance - amount_major
@@ -109,7 +85,6 @@ def redeem(body: RedeemBody):
         UpdateExpression="SET balance = :balance",
         ExpressionAttributeValues={":balance": new_db_balance},
     )
-    
     # Record the transaction in moves table
     memos = {"voucher_id": body.voucher_id, "store_id": body.store_id, "program_id": body.program_id}
     TBL_MOVES.put_item(Item={
@@ -122,7 +97,7 @@ def redeem(body: RedeemBody):
         "validated_ledger": 0,
         "occurred_at": now_iso(),
     })
-    
+
     return {
         "payout_id": payout_id,
         "store_currency": body.currency,
@@ -131,7 +106,6 @@ def redeem(body: RedeemBody):
         "xrpl_tx_hash": tx_hash,
         "status": "completed",
         "recipient_address": recipient_address,
-        "destination_address": destination_address,
         "amount_transferred_usd": amount_usd,
     }
 
@@ -146,7 +120,8 @@ def upsert_store_payout_method(store_id: str, body: StorePayoutMethod):
 def create_payout(body: StorePayoutBody):
     quote = get_quote("XRP", body.currency, body.amount_minor)
     memos = {"voucher_id": "batch", "store_id": body.store_id, "program_id": body.program_id}
-    tx_hash = pay_offramp_on_xrpl(to_drops(body.amount_minor), memos)
+    # tx_hash = offramp_via_faucet(recipient_private_key, recipient_address, amount_usd, memos=memos)
+    tx_hash = "simulated-tx-hash-for-dev-only"
     payout_id = str(uuid.uuid4())
     TBL_PAYOUTS.put_item(Item={
         "payout_id": payout_id,
