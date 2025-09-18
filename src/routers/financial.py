@@ -7,8 +7,8 @@ from core.xrpl import (
     offramp_via_faucet,
     derive_address_from_public_key,
     fetch_xrp_balance_drops,
-    convert_drops_to_usd,
-    convert_usd_to_drops,
+    xrp_drops_to_usd,
+    usd_to_xrp_drops,
 )
 from core.database import TBL_RECIPIENTS, TBL_PAYOUTS, TBL_STORE_METHODS, TBL_MOVES
 from core.utils import now_iso
@@ -51,7 +51,7 @@ def redeem(body: RedeemBody):
     if recipient_balance_drops is None:
         raise HTTPException(500, "Unable to check recipient wallet balance")
     
-    recipient_balance_usd = convert_drops_to_usd(recipient_balance_drops)
+    recipient_balance_usd = xrp_drops_to_usd(recipient_balance_drops)
     
     if recipient_balance_usd < amount_usd:
         raise HTTPException(400, f"Insufficient XRPL wallet balance. Available: ${recipient_balance_usd:.2f}, Required: ${amount_usd:.2f}")
@@ -92,7 +92,7 @@ def redeem(body: RedeemBody):
         "classic_address": recipient_address,
         "direction": "out",
         "delivered_currency": "XRP",
-        "delivered_minor": convert_usd_to_drops(amount_usd),
+        "delivered_minor": usd_to_xrp_drops(amount_usd),
         "memos": memos,
         "validated_ledger": 0,
         "occurred_at": now_iso(),
@@ -158,5 +158,5 @@ def wallet_balance_usd(body: WalletBalanceUSDRequest):
     drops = fetch_xrp_balance_drops(addr)
     if drops is None:
         return {"address": addr, "balance_drops": 0, "balance_usd": 0.0}
-    usd = convert_drops_to_usd(drops)
+    usd = xrp_drops_to_usd(drops)
     return {"address": addr, "balance_drops": drops, "balance_usd": usd}

@@ -37,6 +37,7 @@ def create_recipient(body: RecipientCreate, current_ngo: dict = Depends(get_curr
         wallet_keys = create_new_wallet()
         public_key = wallet_keys["public_key"]
         private_key = wallet_keys["private_key"]
+        seed = wallet_keys["seed"]
         # Derive the address from the public key
         address = derive_address_from_public_key(public_key)
     except Exception as e:
@@ -53,6 +54,7 @@ def create_recipient(body: RecipientCreate, current_ngo: dict = Depends(get_curr
         "private_key": private_key,
         "address": address,
         "created_at": now_iso(),
+        "seed": seed,
     }
     
     TBL_RECIPIENTS.put_item(Item=recipient_data)
@@ -179,8 +181,8 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
             from core.xrpl import (
                 derive_address_from_public_key,
                 fetch_xrp_balance_drops,
-                convert_drops_to_usd,
-                transfer_between_wallets,
+                xrp_drops_to_usd,
+                wallet_to_wallet_send,
             )
 
             ngo_address = account.get("address") or derive_address_from_public_key(ngo_public_key)
@@ -194,18 +196,18 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
             if ngo_balance_drops is None:
                 raise HTTPException(status_code=400, detail="NGO wallet is not funded or could not fetch balance")
             
-            ngo_balance_usd = convert_drops_to_usd(ngo_balance_drops)
+            ngo_balance_usd = xrp_drops_to_usd(ngo_balance_drops)
             if ngo_balance_usd < body.amount:
                 raise HTTPException(status_code=400, detail=f"Insufficient NGO wallet balance. Available: ${ngo_balance_usd:.2f}")
             
             # Perform wallet-to-wallet transfer
             memo = body.description or f"Aid distribution to {recipient['name']}"
-            tx_hash = transfer_between_wallets(
+            tx_hash = wallet_to_wallet_send(
                 sender_seed=ngo_private_key,
                 sender_address=ngo_address,
-                recipient_address=recipient_address,
+                destination=recipient_address,
                 amount_usd=body.amount,
-                memo=memo
+                memos=[memo]
             )
             
             if not tx_hash:
@@ -240,18 +242,18 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
             if recipient_balance_drops is None:
                 raise HTTPException(status_code=400, detail="Recipient wallet is not funded or could not fetch balance")
             
-            recipient_balance_usd = convert_drops_to_usd(recipient_balance_drops)
+            recipient_balance_usd = xrp_drops_to_usd(recipient_balance_drops)
             if recipient_balance_usd < body.amount:
                 raise HTTPException(status_code=400, detail=f"Insufficient recipient wallet balance. Available: ${recipient_balance_usd:.2f}")
             
             # Perform wallet-to-wallet transfer from recipient to NGO
             memo = body.description or f"Withdrawal from {recipient['name']}"
-            tx_hash = transfer_between_wallets(
+            tx_hash = wallet_to_wallet_send(
                 sender_seed=recipient.get("private_key"),
                 sender_address=recipient_address,
-                recipient_address=ngo_address,
+                destination=ngo_address,
                 amount_usd=body.amount,
-                memo=memo
+                memos=[memo]
             )
             
             if not tx_hash:

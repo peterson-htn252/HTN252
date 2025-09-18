@@ -253,7 +253,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     try {
       const r = await fetch(`${API_URL}/donor/payments/fulfill`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": paymentIntentId },
         body: JSON.stringify({
           paymentIntentId: paymentIntentId,
           overrideAddress: selectedProgramData?.xrpl_address || undefined,

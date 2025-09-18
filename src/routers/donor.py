@@ -333,19 +333,19 @@ def fulfill_payment(payload: FulfillRequest) -> Dict[str, Any]:
 
     destination, raw_used = _resolve_destination(program_id, payload.overrideAddress, metadata)
     amount_cents = getattr(intent, "amount_received", None) or getattr(intent, "amount", 0) or 0
-    amount_xrp = amount_cents / 100.0
+    amount_usd = amount_cents / 100.0
 
     logger.info(
         "[fulfill] programId=%s dest=%s amountXrp=%.6f raw=%s",
         program_id,
         destination,
-        amount_xrp,
+        amount_usd,
         raw_used,
     )
 
     tx_hash = onramp_via_faucet(
         destination,
-        amount_xrp,
+        amount_usd,
         memos={
             "Program": program_id,
             "DonationId": payload.paymentIntentId,
