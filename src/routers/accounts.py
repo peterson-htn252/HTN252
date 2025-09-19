@@ -123,24 +123,6 @@ def _wallet_usd(address: str) -> Decimal:
     return usd.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
 
 
-def _update_recipient_balance_optimistic(recipient_id: str, prev_balance: Decimal, new_balance: Decimal) -> None:
-    """
-    Optimistic concurrency without stored procedures:
-    update ... where recipient_id = :id and balance = :prev
-    If no row comes back, the balance changed between read and write.
-    """
-    res = (
-        supabase.table(TBL_RECIPIENTS)
-        .update({"balance": float(new_balance)})
-        .eq("recipient_id", recipient_id)
-        .eq("balance", float(prev_balance))
-        .execute()
-    )
-    updated = res.data or []
-    if len(updated) == 0:
-        raise HTTPException(status_code=409, detail="Balance changed concurrently. Please retry")
-
-
 def _sanitize_account_response(acc: Dict[str, Any]) -> Dict[str, Any]:
     acc = dict(acc)
     acc.pop("password_hash", None)
@@ -560,7 +542,6 @@ def manage_recipient_balance(
                 raise HTTPException(status_code=502, detail="Wallet transfer failed")
 
             new_balance = (current_balance + amount_usd).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
-            _update_recipient_balance_optimistic(recipient_id, current_balance, new_balance)
 
         else:  # withdraw
             if current_balance < amount_usd:
@@ -593,7 +574,6 @@ def manage_recipient_balance(
                 raise HTTPException(status_code=502, detail="Wallet transfer failed")
 
             new_balance = (current_balance - amount_usd).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
-            _update_recipient_balance_optimistic(recipient_id, current_balance, new_balance)
 
         return {
             "previous_balance": float(current_balance),
