@@ -9,7 +9,7 @@ from core.utils import now_iso
 router = APIRouter()
 
 
-@router.get("/ngos/public", tags=["ngos"])
+@router.get("/ngos/public", tags=["ngo"])
 def list_public_ngos():
     """Public endpoint to list all active NGOs for payment terminal selection"""
     try:

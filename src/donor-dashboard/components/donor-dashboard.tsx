@@ -44,7 +44,7 @@ export function DonorDashboard() {
         const ngos = await fetchNGOs();           // ← now always an array
         setImpactData(calculateImpactData(ngos)); // ← safe reduce
       } catch (e) {
-        console.error("[v0] Error loading impact data:", e);
+        console.error("Error loading impact data:", e);
         setImpactData({
           totalDonated: 146000,
           peopleHelped: 555,

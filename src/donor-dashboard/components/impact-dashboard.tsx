@@ -85,16 +85,16 @@ export function ImpactDashboard({ impactData: propImpactData }: ImpactDashboardP
     async function loadNGOData() {
       try {
         setIsLoading(true)
-        console.log("[v0] Fetching NGO data from API...")
+        console.log("Fetching NGO data from API...")
         const ngoData = await fetchNGOs()
-        console.log("[v0] Received NGO data:", ngoData)
+        console.log("Received NGO data:", ngoData)
 
         setNgos(ngoData)
         setPrograms(transformNGOsToPrograms(ngoData))
         setImpactData(calculateImpactData(ngoData))
         setError(null)
       } catch (err) {
-        console.error("[v0] Error loading NGO data:", err)
+        console.error("Error loading NGO data:", err)
         setError("Failed to load NGO data")
       } finally {
         setIsLoading(false)
