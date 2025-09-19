@@ -23,7 +23,7 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
         
         # Get NGO account details
         from core.database import TBL_ACCOUNTS, TBL_NGO_EXPENSES
-        from core.xrpl import derive_address_from_public_key, fetch_xrp_balance_drops, convert_drops_to_usd
+        from core.xrpl import derive_address_from_public_key, fetch_xrp_balance_drops, xrp_drops_to_usd
         
         account = TBL_ACCOUNTS.get_item(Key={"account_id": ngo_id}).get("Item")
         if not account:
@@ -39,7 +39,7 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
             if addr:
                 drops = fetch_xrp_balance_drops(addr)
                 drops_val = 0 if drops is None else drops
-                usd = convert_drops_to_usd(drops_val)
+                usd = xrp_drops_to_usd(drops_val)
                 available_funds = int(round(usd * 100))  # Convert to minor units (cents)
         except Exception:
             available_funds = 0
