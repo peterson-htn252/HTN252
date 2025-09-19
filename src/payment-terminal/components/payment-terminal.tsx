@@ -10,6 +10,7 @@ import { PaymentAccepted } from "@/components/payment-accepted"
 import { CustomerIdleScreen } from "@/components/customer-idle-screen"
 import { WalletDetails } from "@/components/wallet-details"
 import { CreditCard, Shield, Clock } from "lucide-react"
+import { postJson } from "@shared/http"
 
 export interface CheckoutItem {
   id: string
@@ -97,13 +98,10 @@ export function PaymentTerminal() {
       setPaymentError(null)
       try {
         // Get XRPL wallet balance (this is what we use for payment)
-        const walletRes = await fetch("http://localhost:8000/wallets/balance-usd", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ public_key: result.publicKey }),
+        const walletData = await postJson<{ balance_usd?: number }>("/wallets/balance-usd", {
+          public_key: result.publicKey,
         })
-        const walletData = await walletRes.json().catch(() => ({}))
-        const walletBalance = walletData.balance_usd || 0
+        const walletBalance = walletData.balance_usd ?? 0
 
         // Check if recipient has sufficient XRPL wallet balance
         const transactionAmount = transactionData?.total || 0
@@ -139,25 +137,14 @@ export function PaymentTerminal() {
 
     try {
       // Call the /redeem endpoint to process the actual payment
-      const redeemRes = await fetch("http://localhost:8000/redeem", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          voucher_id: transactionData.transactionId || `voucher_${Date.now()}`,
-          store_id: transactionData.storeId || "store_001",
-          recipient_id: walletInfo.recipientId,
-          program_id: transactionData.programId || "general_aid",
-          amount_minor: Math.round(transactionData.total * 100), // Convert to minor units (cents)
-          currency: "USD"
-        }),
+      const redeemData = await postJson<{ status: string }>("/redeem", {
+        voucher_id: transactionData.transactionId || `voucher_${Date.now()}`,
+        store_id: transactionData.storeId || "store_001",
+        recipient_id: walletInfo.recipientId,
+        program_id: transactionData.programId || "general_aid",
+        amount_minor: Math.round(transactionData.total * 100),
+        currency: "USD",
       })
-
-      if (!redeemRes.ok) {
-        const errorData = await redeemRes.json().catch(() => ({}))
-        throw new Error(errorData.detail || `Payment failed: ${redeemRes.status}`)
-      }
-
-      const redeemData = await redeemRes.json()
       console.log("Payment processed successfully:", redeemData)
       
       // Payment successful

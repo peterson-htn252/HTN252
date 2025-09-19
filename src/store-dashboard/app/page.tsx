@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { ShoppingCart, Plus, Minus, Trash2, DollarSign, History, Clock, CheckCircle, XCircle } from "lucide-react"
+import { resolveEnvironmentUrl } from "@shared/env"
 
 const products = [
   { id: "001", name: "Apple", price: 1.5, category: "Produce" },
@@ -19,7 +20,12 @@ const products = [
   { id: "008", name: "Orange Juice", price: 4.49, category: "Beverages" },
 ]
 
-const PAYMENT_TERMINAL_URL = process.env.NEXT_PUBLIC_PAYMENT_TERMINAL_URL || "http://localhost:3003"
+const PAYMENT_TERMINAL_URL = resolveEnvironmentUrl({
+  devKey: "NEXT_PUBLIC_PAYMENT_TERMINAL_URL_DEV",
+  prodKey: "NEXT_PUBLIC_PAYMENT_TERMINAL_URL_PROD",
+  baseKey: "NEXT_PUBLIC_PAYMENT_TERMINAL_URL",
+  fallbackDev: "http://localhost:3003",
+})
 const VENDOR_NAME = "Store Checkout"
 const STORE_ID = process.env.NEXT_PUBLIC_STORE_ID || "store_001"
 const PROGRAM_ID = process.env.NEXT_PUBLIC_PROGRAM_ID || "general_aid"

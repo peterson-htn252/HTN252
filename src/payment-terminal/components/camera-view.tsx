@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Camera, CameraOff, CheckCircle } from "lucide-react"
+import { apiFetch } from "@shared/http"
 
 export interface VerificationResult {
   success: boolean
@@ -64,7 +65,8 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
     if (frames.length === 0) {
       setVerificationProgress(0)
       setIsCapturing(false)
-      onVerificationComplete({ success: false, error: "No frames captured" })
+      setError("No frames captured")
+      onVerificationComplete?.({ success: false })
       return
     }
 
@@ -78,7 +80,7 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
     })
 
     try {
-      const resp = await fetch("http://localhost:8000/face/identify_batch", {
+      const resp = await apiFetch("/face/identify_batch", {
         method: "POST",
         body: fd,
       })

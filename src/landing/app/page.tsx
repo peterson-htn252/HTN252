@@ -4,6 +4,14 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Shield, Eye, Zap, Users, ArrowRight, Globe, Heart, Plus, DollarSign } from "lucide-react"
 import Link from "next/link"
+import { resolveEnvironmentUrl } from "@shared/env"
+
+const NGO_DASHBOARD_URL = resolveEnvironmentUrl({
+  devKey: "NEXT_PUBLIC_NGO_DASHBOARD_URL_DEV",
+  prodKey: "NEXT_PUBLIC_NGO_DASHBOARD_URL_PROD",
+  baseKey: "NEXT_PUBLIC_NGO_DASHBOARD_URL",
+  fallbackDev: "http://localhost:3001",
+})
 
 export default function DonationPlatform() {
   const donationPrograms = [
@@ -84,9 +92,7 @@ export default function DonationPlatform() {
             </p>
             <div className="mt-10 flex items-center justify-center gap-x-6">
               <Button size="lg" className="text-lg px-8 py-6">
-                <Link href="http://localhost:3001">
-                Browse Programs
-                </Link>
+                <Link href={NGO_DASHBOARD_URL}>Browse Programs</Link>
               </Button>
               <Button variant="outline" size="lg" className="text-lg px-8 py-6 bg-transparent">
                 Join as NGO

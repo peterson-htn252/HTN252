@@ -1,4 +1,7 @@
 import uuid
+from dataclasses import dataclass
+from typing import Any, Dict
+
 from fastapi import APIRouter, HTTPException
 
 from models import QuoteRequest, RedeemBody, StorePayoutMethod, StorePayoutBody, WalletBalanceUSDRequest
@@ -16,6 +19,104 @@ from core.utils import now_iso
 router = APIRouter()
 
 
+@dataclass
+class RecipientWallet:
+    ngo_id: str
+    address: str
+    seed: str
+
+
+def _fetch_recipient(recipient_id: str) -> Dict[str, Any]:
+    recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
+    if not recipient:
+        raise HTTPException(404, "Recipient not found")
+    return recipient
+
+
+def _resolve_wallet(recipient: Dict[str, Any]) -> RecipientWallet:
+    public_key = recipient.get("public_key")
+    seed = recipient.get("seed")
+    address = recipient.get("address")
+    if not public_key or not seed:
+        raise HTTPException(400, "Recipient wallet not properly configured")
+    resolved_address = address or derive_address_from_public_key(public_key)
+    if not resolved_address:
+        raise HTTPException(400, "Cannot derive recipient address from public key")
+    ngo_id = recipient.get("ngo_id")
+    if not ngo_id:
+        raise HTTPException(400, "Recipient missing NGO linkage")
+    return RecipientWallet(ngo_id=str(ngo_id), address=resolved_address, seed=seed)
+
+
+def _amount_minor_to_usd(amount_minor: int) -> float:
+    return amount_minor / 100.0
+
+
+def _ensure_wallet_balance(address: str, amount_usd: float) -> float:
+    balance_drops = fetch_xrp_balance_drops(address)
+    if balance_drops is None:
+        raise HTTPException(500, "Unable to check recipient wallet balance")
+    balance_usd = xrp_drops_to_usd(balance_drops)
+    if balance_usd < amount_usd:
+        raise HTTPException(
+            400,
+            f"Insufficient XRPL wallet balance. Available: ${balance_usd:.2f}, Required: ${amount_usd:.2f}",
+        )
+    return balance_usd
+
+
+def _offramp_recipient(wallet: RecipientWallet, body: RedeemBody, amount_usd: float) -> str:
+    memos = {"Redeem": body.voucher_id, "Store": body.store_id, "Program": body.program_id}
+    return offramp_via_faucet(wallet.seed, wallet.address, amount_usd, memos=memos)
+
+
+def _persist_payout(
+    *,
+    store_id: str,
+    program_id: str,
+    amount_minor: int,
+    currency: str,
+    quote_id: str,
+    tx_hash: str,
+    status: str,
+    ngo_id: str | None = None,
+) -> str:
+    payout_id = str(uuid.uuid4())
+    record: Dict[str, Any] = {
+        "payout_id": payout_id,
+        "store_id": store_id,
+        "program_id": program_id,
+        "amount_minor": amount_minor,
+        "currency": currency,
+        "quote_id": quote_id,
+        "xrpl_tx_hash": tx_hash,
+        "offramp_ref": None,
+        "status": status,
+        "created_at": now_iso(),
+    }
+    if ngo_id:
+        record["ngo_id"] = ngo_id
+    TBL_PAYOUTS.put_item(Item=record)
+    return payout_id
+
+
+def _record_move(wallet: RecipientWallet, tx_hash: str, amount_usd: float, body: RedeemBody) -> None:
+    memos = {"voucher_id": body.voucher_id, "store_id": body.store_id, "program_id": body.program_id}
+    TBL_MOVES.put_item(
+        Item={
+            "tx_hash": tx_hash,
+            "classic_address": wallet.address,
+            "direction": "out",
+            "delivered_currency": "XRP",
+            "delivered_minor": usd_to_xrp_drops(amount_usd),
+            "memos": memos,
+            "validated_ledger": 0,
+            "ngo_id": wallet.ngo_id,
+            "created_at": now_iso(),
+        }
+    )
+
+
 @router.post("/quotes", tags=["quotes"])
 def create_quote(body: QuoteRequest):
     return get_quote(body.from_currency, body.to_currency, body.amount_minor)
@@ -23,76 +124,24 @@ def create_quote(body: QuoteRequest):
 
 @router.post("/redeem", tags=["redeem"])
 def redeem(body: RedeemBody):
-    # Get recipient and validate they exist
-    recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": body.recipient_id}).get("Item")
-    print(recipient)
-    if not recipient:
-        raise HTTPException(404, "Recipient not found")
-    
-    # Get recipient's wallet details
-    recipient_private_key = recipient.get("private_key")
-    recipient_public_key = recipient.get("public_key")
-    recipient_address = recipient.get("address")
-    recipient_seed = recipient.get("seed")
-    
-    if not recipient_private_key or not recipient_public_key:
-        raise HTTPException(400, "Recipient wallet not properly configured")
-    
-    # Derive address if not stored
-    if not recipient_address:
-        recipient_address = derive_address_from_public_key(recipient_public_key)
-        if not recipient_address:
-            raise HTTPException(400, "Cannot derive recipient address from public key")
-    
-    # Convert amount and check XRPL wallet balance
-    amount_major = body.amount_minor / 100.0  # Convert minor units to major units
-    amount_usd = amount_major  # Assuming USD
-    
-    # Check XRPL wallet balance
-    recipient_balance_drops = fetch_xrp_balance_drops(recipient_address)
-    if recipient_balance_drops is None:
-        raise HTTPException(500, "Unable to check recipient wallet balance")
-    
-    recipient_balance_usd = xrp_drops_to_usd(recipient_balance_drops)
-    
-    if recipient_balance_usd < amount_usd:
-        raise HTTPException(400, f"Insufficient XRPL wallet balance. Available: ${recipient_balance_usd:.2f}, Required: ${amount_usd:.2f}")
-    
-    # Get NGO/store destination address (for now, use NGO hot address)
-    tx_hash = offramp_via_faucet(recipient_seed, recipient_address, amount_usd, memos={"Redeem": body.voucher_id, "Store": body.store_id, "Program": body.program_id})
+    recipient = _fetch_recipient(body.recipient_id)
+    wallet = _resolve_wallet(recipient)
+    amount_usd = _amount_minor_to_usd(body.amount_minor)
+    available_balance = _ensure_wallet_balance(wallet.address, amount_usd)
 
-    # Create quote and payout record
+    tx_hash = _offramp_recipient(wallet, body, amount_usd)
     quote = get_quote("XRP", body.currency, body.amount_minor)
-    payout_id = str(uuid.uuid4())
-    store_id = str(uuid.uuid4())  # In real scenario, validate store_id exists
-    ngo_id = recipient["ngo_id"]
-
-    # Store payout record
-    TBL_PAYOUTS.put_item(Item={
-        "payout_id": payout_id,
-        "store_id": store_id,
-        "program_id": body.program_id,
-        "amount_minor": body.amount_minor,
-        "currency": body.currency,
-        "quote_id": quote["quote_id"],
-        "xrpl_tx_hash": tx_hash,
-        "offramp_ref": None,
-        "status": "paid",  # Mark as success since we did the transfer
-        "ngo_id": ngo_id,
-    })
-
-    # Record the transaction in moves table
-    memos = {"voucher_id": body.voucher_id, "store_id": body.store_id, "program_id": body.program_id}
-    TBL_MOVES.put_item(Item={
-        "tx_hash": tx_hash,
-        "classic_address": recipient_address,
-        "direction": "out",
-        "delivered_currency": "XRP",
-        "delivered_minor": usd_to_xrp_drops(amount_usd),
-        "memos": memos,
-        "validated_ledger": 0,
-        "ngo_id": ngo_id,
-    })
+    payout_id = _persist_payout(
+        store_id=body.store_id,
+        program_id=body.program_id,
+        amount_minor=body.amount_minor,
+        currency=body.currency,
+        quote_id=quote["quote_id"],
+        tx_hash=tx_hash,
+        status="paid",
+        ngo_id=wallet.ngo_id,
+    )
+    _record_move(wallet, tx_hash, amount_usd, body)
 
     return {
         "payout_id": payout_id,
@@ -101,8 +150,9 @@ def redeem(body: RedeemBody):
         "quote": quote,
         "xrpl_tx_hash": tx_hash,
         "status": "completed",
-        "recipient_address": recipient_address,
+        "recipient_address": wallet.address,
         "amount_transferred_usd": amount_usd,
+        "wallet_balance_usd": available_balance,
     }
 
 
@@ -115,24 +165,16 @@ def upsert_store_payout_method(store_id: str, body: StorePayoutMethod):
 @router.post("/payouts", tags=["payouts"])
 def create_payout(body: StorePayoutBody):
     quote = get_quote("XRP", body.currency, body.amount_minor)
-    memos = {"voucher_id": "batch", "store_id": body.store_id, "program_id": body.program_id}
-    # tx_hash = offramp_via_faucet(recipient_private_key, recipient_address, amount_usd, memos=memos)
     tx_hash = "simulated-tx-hash-for-dev-only"
-    payout_id = str(uuid.uuid4())
-    store_uuid = str(uuid.uuid4())
-    # Ensure store_id is a valid UUID string
-    TBL_PAYOUTS.put_item(Item={
-        "payout_id": payout_id,
-        "store_id": store_uuid,
-        "program_id": body.program_id,
-        "amount_minor": body.amount_minor,
-        "currency": body.currency,
-        "quote_id": quote["quote_id"],
-        "xrpl_tx_hash": tx_hash,
-        "offramp_ref": None,
-        "status": "processing",
-        "created_at": now_iso(),
-    })
+    payout_id = _persist_payout(
+        store_id=body.store_id,
+        program_id=body.program_id,
+        amount_minor=body.amount_minor,
+        currency=body.currency,
+        quote_id=quote["quote_id"],
+        tx_hash=tx_hash,
+        status="processing",
+    )
     return {"payout_id": payout_id, "xrpl_tx_hash": tx_hash, "status": "processing"}
 
 

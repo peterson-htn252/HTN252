@@ -9,6 +9,7 @@ import { CheckCircle, Camera, User, Shield, FileText } from "lucide-react"
 import { FaceScanStep } from "@/components/face-scan-step"
 import { IdUploadStep } from "@/components/id-upload-step"
 import { ReviewStep } from "@/components/review-step"
+import { apiFetch } from "@shared/http"
 
 type Step = "welcome" | "face-scan" | "id-upload" | "review" | "complete"
 
@@ -36,10 +37,14 @@ export function UserCreationDashboard() {
     const fd = new FormData()
     if (accountId) fd.append("account_id", accountId)
     for (const f of faceData.files) fd.append("files", f)
-    const res = await fetch("http://localhost:8000/face/enroll", {
+    const res = await apiFetch("/face/enroll", {
       method: "POST",
       body: fd,
     })
+    if (!res.ok) {
+      alert("Face enrollment failed. Please try again.")
+      return
+    }
     const data = await res.json()
     console.log("Face enroll response:", data)
     if (!data || !data.face_id) {
@@ -65,7 +70,7 @@ export function UserCreationDashboard() {
     }
     fd.append("name", `${updatedData.firstName} ${updatedData.lastName}`)
 
-    const res = await fetch("http://localhost:8000/face/promote", {
+    const res = await apiFetch("/face/promote", {
       method: "POST",
       body: fd,
     })

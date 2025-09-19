@@ -3,7 +3,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 import numpy as np
 import uuid, json
 
-from core.face import get_face_app, FACE_AVAILABLE
+from core.face import get_face_app
 from core.auth import get_current_ngo
 from core.database import (
     TBL_FACE_MAPS,
@@ -17,20 +17,6 @@ from core.xrpl import derive_address_from_public_key
 router = APIRouter()
 
 # -------------------- helpers --------------------
-
-import random
-import string
-
-def generate_random_string(length):
-    """
-    Generates a random string of a specified length containing
-    uppercase letters, lowercase letters, and digits.
-    """
-    characters = string.ascii_letters + string.digits
-    random_string = ''.join(random.choice(characters) for i in range(length))
-    return random_string
-
-# Example usage:
 
 def _img_bytes_to_ndarray(data: bytes):
     import cv2
