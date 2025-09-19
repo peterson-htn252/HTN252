@@ -25,6 +25,7 @@ def create_quote(body: QuoteRequest):
 def redeem(body: RedeemBody):
     # Get recipient and validate they exist
     recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": body.recipient_id}).get("Item")
+    print(recipient)
     if not recipient:
         raise HTTPException(404, "Recipient not found")
     
@@ -32,6 +33,7 @@ def redeem(body: RedeemBody):
     recipient_private_key = recipient.get("private_key")
     recipient_public_key = recipient.get("public_key")
     recipient_address = recipient.get("address")
+    recipient_seed = recipient.get("seed")
     
     if not recipient_private_key or not recipient_public_key:
         raise HTTPException(400, "Recipient wallet not properly configured")
@@ -57,34 +59,28 @@ def redeem(body: RedeemBody):
         raise HTTPException(400, f"Insufficient XRPL wallet balance. Available: ${recipient_balance_usd:.2f}, Required: ${amount_usd:.2f}")
     
     # Get NGO/store destination address (for now, use NGO hot address)
-    tx_hash = offramp_via_faucet(recipient_private_key, recipient_address, amount_usd, memos={"Redeem": body.voucher_id, "Store": body.store_id, "Program": body.program_id})
+    tx_hash = offramp_via_faucet(recipient_seed, recipient_address, amount_usd, memos={"Redeem": body.voucher_id, "Store": body.store_id, "Program": body.program_id})
 
     # Create quote and payout record
     quote = get_quote("XRP", body.currency, body.amount_minor)
     payout_id = str(uuid.uuid4())
+    store_id = str(uuid.uuid4())  # In real scenario, validate store_id exists
+    ngo_id = recipient["ngo_id"]
 
     # Store payout record
     TBL_PAYOUTS.put_item(Item={
         "payout_id": payout_id,
-        "store_id": body.store_id,
+        "store_id": store_id,
         "program_id": body.program_id,
         "amount_minor": body.amount_minor,
         "currency": body.currency,
         "quote_id": quote["quote_id"],
         "xrpl_tx_hash": tx_hash,
         "offramp_ref": None,
-        "status": "completed",  # Mark as completed since we did the transfer
-        "created_at": now_iso(),
+        "status": "paid",  # Mark as success since we did the transfer
+        "ngo_id": ngo_id,
     })
 
-    # Update recipient's database balance to reflect the XRPL transfer
-    current_db_balance = recipient.get("balance", 0.0)
-    new_db_balance = current_db_balance - amount_major
-    TBL_RECIPIENTS.update_item(
-        Key={"recipient_id": body.recipient_id},
-        UpdateExpression="SET balance = :balance",
-        ExpressionAttributeValues={":balance": new_db_balance},
-    )
     # Record the transaction in moves table
     memos = {"voucher_id": body.voucher_id, "store_id": body.store_id, "program_id": body.program_id}
     TBL_MOVES.put_item(Item={
@@ -95,7 +91,7 @@ def redeem(body: RedeemBody):
         "delivered_minor": usd_to_xrp_drops(amount_usd),
         "memos": memos,
         "validated_ledger": 0,
-        "occurred_at": now_iso(),
+        "ngo_id": ngo_id,
     })
 
     return {
@@ -123,9 +119,11 @@ def create_payout(body: StorePayoutBody):
     # tx_hash = offramp_via_faucet(recipient_private_key, recipient_address, amount_usd, memos=memos)
     tx_hash = "simulated-tx-hash-for-dev-only"
     payout_id = str(uuid.uuid4())
+    store_uuid = str(uuid.uuid4())
+    # Ensure store_id is a valid UUID string
     TBL_PAYOUTS.put_item(Item={
         "payout_id": payout_id,
-        "store_id": body.store_id,
+        "store_id": store_uuid,
         "program_id": body.program_id,
         "amount_minor": body.amount_minor,
         "currency": body.currency,

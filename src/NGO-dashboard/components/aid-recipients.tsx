@@ -87,9 +87,11 @@ export function AidRecipients() {
 
         const response = await apiClient.getRecipients(searchTerm || undefined)
         const transformedRecipients = response.recipients.map(transformRecipient)
+        console.log(transformedRecipients[0].walletBalance)
         setRecipients(transformedRecipients)
         updateRecipientBalance(selectedRecipient?.id || "")
       } catch (err) {
+        console.error(err)
         setError(err instanceof Error ? err.message : "Failed to load recipients")
       } finally {
         setIsLoading(false)
@@ -197,6 +199,7 @@ export function AidRecipients() {
       // Refresh the recipients list
       const response = await apiClient.getRecipients()
       const transformedRecipients = response.recipients.map(transformRecipient)
+      console.log(transformedRecipients)
       setRecipients(transformedRecipients)
 
       toast({
@@ -382,7 +385,7 @@ export function AidRecipients() {
             <CardContent className="space-y-4">
               <div className="text-sm">
                 <div className="text-muted-foreground">Wallet Balance</div>
-                <div className="font-bold text-lg text-foreground" id={`${recipient.id}-balance`}>recipient.walletBalance</div>
+                <div className="font-bold text-lg text-foreground" id={`${recipient.id}-balance`}>{recipient.walletBalance}</div>
               </div>
 
               <div className="flex items-center gap-1 text-xs text-muted-foreground">

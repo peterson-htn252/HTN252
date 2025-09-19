@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends
 
+from routers.financial import wallet_balance_usd
 from supabase import create_client, Client
 
 from models import (
@@ -15,6 +16,7 @@ from models import (
     NGOAccountSummary,
     RecipientCreate,
     BalanceOperation,
+    WalletBalanceUSDRequest,
 )
 from core.auth import hash_password, verify_password, create_access_token, verify_token
 from core.utils import now_iso
@@ -434,6 +436,9 @@ def list_recipients(
         else:
             res = q.execute()
             rows = res.data or []
+            for r in rows:
+                request = WalletBalanceUSDRequest(public_key=r.get("public_key"))
+                r["balance"] = wallet_balance_usd(request)["balance_usd"]
 
         return {"recipients": rows, "count": len(rows)}
     except HTTPException:

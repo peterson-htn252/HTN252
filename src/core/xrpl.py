@@ -356,7 +356,7 @@ def onramp_via_faucet(
 def offramp_via_faucet(
     source_seed: str,
     source_address: str,
-    amount_xrp: float,
+    amount_usd: float,
     *,
     memos: Optional[Dict[str, str]] = None,
 ) -> str:
@@ -371,7 +371,7 @@ def offramp_via_faucet(
         sender_seed=source_seed,
         sender_address=source_address,
         destination=faucet.classic_address,     # type: ignore[attr-defined]
-        amount_xrp=amount_xrp,
+        amount_usd=amount_usd,
         dest_tag=None,
         memos=memos,
     )
