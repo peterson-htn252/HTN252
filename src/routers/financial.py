@@ -81,7 +81,9 @@ def _persist_payout(
     status: str,
     ngo_id: str | None = None,
 ) -> str:
+    store_id = str(uuid.uuid4())
     payout_id = str(uuid.uuid4())
+
     record: Dict[str, Any] = {
         "payout_id": payout_id,
         "store_id": store_id,
@@ -92,7 +94,6 @@ def _persist_payout(
         "xrpl_tx_hash": tx_hash,
         "offramp_ref": None,
         "status": status,
-        "created_at": now_iso(),
     }
     if ngo_id:
         record["ngo_id"] = ngo_id
@@ -112,7 +113,6 @@ def _record_move(wallet: RecipientWallet, tx_hash: str, amount_usd: float, body:
             "memos": memos,
             "validated_ledger": 0,
             "ngo_id": wallet.ngo_id,
-            "created_at": now_iso(),
         }
     )
 

@@ -11,10 +11,7 @@ from typing import Dict, Iterable, List, Optional, TypedDict, Union
 
 from fastapi import HTTPException
 
-try:  # ccxt is optional during local development
-    import ccxt  # type: ignore
-except Exception:  # pragma: no cover - dependency may be absent
-    ccxt = None  # type: ignore
+import ccxt
 
 from xrpl.clients import JsonRpcClient
 from xrpl.core.keypairs import derive_classic_address
@@ -359,4 +356,3 @@ def create_new_wallet() -> Dict[str, str]:
         "private_key": f"ED{_sha256_hex(seed_source + 'priv')[:62].upper()}",
         "seed": f"s{seed_hash[:28].upper()}",
     }
-*** End of File
