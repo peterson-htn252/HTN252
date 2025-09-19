@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Shield } from "lucide-react"
@@ -8,6 +8,7 @@ import { DonationForm } from "./donation-form"
 import { ImpactDashboard } from "./impact-dashboard"
 import { BlockchainTracker } from "./blockchain-tracker"
 import { AuditTrail } from "./audit-trail"
+import { fetchNGOs, calculateImpactData } from "@/lib/api"
 
 // Mock data for demonstration
 const mockDonations = [
@@ -33,19 +34,29 @@ const mockDonations = [
   },
 ]
 
-const mockImpactData = {
-  totalDonated: 146000,
-  peopleHelped: 555,
-  programsSupported: 3,
-  transparencyScore: 98,
-}
-
 export function DonorDashboard() {
   const [donations, setDonations] = useState(mockDonations)
-  const [impactData, setImpactData] = useState(mockImpactData)
+  const [impactData, setImpactData] = useState<any>(null)
+
+  useEffect(() => {
+    async function loadImpactData() {
+      try {
+        const ngos = await fetchNGOs();           // ← now always an array
+        setImpactData(calculateImpactData(ngos)); // ← safe reduce
+      } catch (e) {
+        console.error("Error loading impact data:", e);
+        setImpactData({
+          totalDonated: 146000,
+          peopleHelped: 555,
+          programsSupported: 3,
+          transparencyScore: 98,
+        });
+      }
+    }
+    loadImpactData();
+  }, []);
 
   const handleDonationComplete = (donationId: string, blockchainId: string) => {
-    // In a real app, this would update the donations list and impact data
     console.log("Donation completed:", { donationId, blockchainId })
   }
 
@@ -57,7 +68,7 @@ export function DonorDashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className="h-8 w-8 text-primary" />
-              <h1 className="text-2xl font-bold text-foreground">Transparent Aid</h1>
+              <h1 className="text-2xl font-bold text-foreground">Ripple Relief</h1>
             </div>
             <Badge variant="secondary" className="text-sm">
               Powered by Ripple XRPL

@@ -4,12 +4,12 @@ export interface NGO {
   email: string;
   organization_name: string;
   contact_name: string;
-  phone?: string;
-  address?: string;
-  description?: string;
+  goal: number;
+  description: string;
   status: string;
   default_program_id: string;
   created_at: string;
+  public_key: string;
 }
 
 export interface Recipient {
@@ -17,39 +17,22 @@ export interface Recipient {
   ngo_id: string;
   name: string;
   location: string;
-  category: string;
-  phone?: string;
-  email?: string;
-  program_id: string;
-  status: "active" | "pending" | "inactive";
+  balance: number;
+  public_key: string;
+  private_key: string;
   created_at: string;
-  updated_at: string;
-  wallet_balance: number;
 }
 
 export interface DashboardStats {
   active_recipients: number;
-  total_donations_30d: number;
-  total_expenses_30d: number;
-  available_funds: number;
+  total_expenses: number; // From auditor table (minor units)
+  available_funds: number; // From wallet balance (minor units)
+  lifetime_donations: number; // Total raised ever (minor units - cents)
+  goal: number; // Target amount (major units - dollars)
   utilization_rate: number;
   last_updated: string;
 }
 
-export interface ExpenseBreakdown {
-  expense_breakdown: Array<{
-    name: string;
-    value: number;
-  }>;
-}
-
-export interface MonthlyTrends {
-  monthly_trends: Array<{
-    month: string;
-    donations: number;
-    expenses: number;
-  }>;
-}
 
 export interface AuthToken {
   access_token: string;
@@ -63,18 +46,36 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  organization_name: string;
+  contact_name: string;
+  goal: number;
+  description: string;
+}
+
 export interface RecipientCreate {
   name: string;
   location: string;
-  category: string;
-  phone?: string;
-  email?: string;
-  program_id: string;
 }
 
 export interface BalanceOperation {
-  amount_minor: number;
+  amount: number;
   operation_type: "deposit" | "withdraw";
   description?: string;
-  program_id: string;
+}
+
+export interface WalletBalanceUSDResponse {
+  address: string | null;
+  balance_drops: number;
+  balance_usd: number;
+}
+
+export interface BalanceOperationResponse {
+  previous_balance: number;
+  new_balance: number;
+  operation: "deposit" | "withdraw";
+  amount: number;
+  tx_hash: string | null;
 }

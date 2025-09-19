@@ -1,0 +1,127 @@
+Table: accounts
+Columns:
+--------------------------------------------------------------
+account_id        UUID (Primary Key)              NOT NULL
+account_type      USER-DEFINED (account_type)     NOT NULL
+status            TEXT                            NOT NULL
+name              TEXT                            NULL
+email             TEXT                            NULL
+password_hash     TEXT                            NULL
+ngo_id            UUID (Foreign Key → ngos.ngo_id) NULL
+created_at        TIMESTAMPTZ (with time zone)    DEFAULT now()
+description       TEXT                            NULL
+goal              REAL (float4)                   NULL
+lifetime_donations REAL (float4)                  NULL
+public_key        TEXT                            NULL
+private_key       TEXT                            NULL
+address          TEXT                            NULL
+--------------------------------------------------------------
+
+Table: credentials
+Columns:
+--------------------------------------------------------------
+credential_id     UUID (Primary Key)              NOT NULL
+issuer_did        TEXT                            NOT NULL
+subject_id        TEXT                            NULL
+role              TEXT                            NULL
+claims            JSONB                           NULL
+jwt               TEXT                            NOT NULL
+status            TEXT                            NOT NULL
+created_at        TIMESTAMPTZ (with time zone)    DEFAULT now()
+ngo_id            UUID (Foreign Key → ngos.ngo_id) NULL
+--------------------------------------------------------------
+
+Table: issuers
+Columns:
+--------------------------------------------------------------
+issuer_did        TEXT (Primary Key)              NOT NULL
+alg               TEXT                            NOT NULL
+public_jwk        JSONB                           NOT NULL
+--------------------------------------------------------------
+
+Table: ngo_expense
+Columns:
+--------------------------------------------------------------
+ngo_id           UUID (Foreign Key → ngos.ngo_id) NOT NULL
+expenses         DOUBLE PRECISION (float8)        NOT NULL
+created_at       TIMESTAMPTZ (with time zone)     DEFAULT now()
+--------------------------------------------------------------
+
+Table: payouts
+Columns:
+--------------------------------------------------------------
+payout_id        UUID (Primary Key)                 NOT NULL
+store_id         UUID                               NOT NULL
+program_id       TEXT                               NOT NULL
+amount_minor     BIGINT (int8)                      NOT NULL
+currency         TEXT                               NOT NULL
+quote_id         TEXT                               NULL
+xrpl_tx_hash     TEXT                               NULL
+offramp_ref      TEXT                               NULL
+status           USER-DEFINED (payout_status)       NOT NULL
+ngo_id           UUID (Foreign Key → ngos.ngo_id)   NOT NULL
+created_at       TIMESTAMPTZ (with time zone)       DEFAULT now()
+--------------------------------------------------------------
+
+Table: recipients
+Columns:
+--------------------------------------------------------------
+recipient_id     UUID (Primary Key)                 NOT NULL
+ngo_id           UUID (Foreign Key → ngos.ngo_id)   NOT NULL
+name             TEXT                               NOT NULL
+location         TEXT                               NOT NULL
+balance          DOUBLE PRECISION (float8)          DEFAULT 0
+public_key       TEXT                               NOT NULL
+private_key      TEXT                               NOT NULL
+created_at       TIMESTAMPTZ (with time zone)       DEFAULT now()
+verified         BOOLEAN                            DEFAULT false
+address          TEXT                               NOT NULL
+--------------------------------------------------------------
+
+Table: revocations
+Columns:
+--------------------------------------------------------------
+credential_id    UUID (Foreign Key → credentials.credential_id)   NOT NULL
+revoked_at       TIMESTAMPTZ (with time zone)                     DEFAULT now()
+--------------------------------------------------------------
+
+Table: store_payout_methods
+Columns:
+--------------------------------------------------------------
+store_id         UUID (Foreign Key → stores.store_id)   NOT NULL
+method           TEXT                                   NOT NULL
+currency         TEXT                                   NOT NULL
+detail           JSONB                                  NOT NULL
+ngo_id           UUID (Foreign Key → ngos.ngo_id)       NOT NULL
+updated_at       TIMESTAMPTZ (with time zone)           DEFAULT now()
+--------------------------------------------------------------
+
+Table: xrpl_transactions
+Columns:
+--------------------------------------------------------------
+tx_hash            TEXT (Primary Key)                     NOT NULL
+classic_address    TEXT                                   NOT NULL
+direction          TEXT                                   NOT NULL    -- e.g., "inbound" | "outbound"
+delivered_currency TEXT                                   NOT NULL
+delivered_minor    BIGINT (int8)                          NOT NULL    -- minor units (e.g., drops, cents)
+memos              JSONB                                  NULL
+validated_ledger   BIGINT (int8)                          NULL
+occurred_at        TIMESTAMPTZ (with time zone)           NOT NULL
+ngo_id             UUID (Foreign Key → ngos.ngo_id)       NOT NULL
+--------------------------------------------------------------
+
+Table: xrpl_wallets
+
+Columns:
+--------------------------------------------------------------
+wallet_id          UUID (Primary Key)                 NOT NULL
+owner_account_id   UUID (Foreign Key → accounts.account_id) NOT NULL
+role               TEXT                               NOT NULL      -- e.g., "NGO", "STORE", "RECIPIENT"
+classic_address    TEXT                               NOT NULL
+custody            TEXT                               NOT NULL      -- e.g., "self", "custodian"
+network            TEXT                               NOT NULL      -- e.g., "testnet", "mainnet"
+activation_status  TEXT                               NOT NULL      -- e.g., "pending", "active"
+seed               TEXT                               NULL          -- ⚠️ sensitive, restrict access
+ngo_id             UUID (Foreign Key → ngos.ngo_id)   NOT NULL
+created_at         TIMESTAMPTZ (with time zone)       DEFAULT now()
+--------------------------------------------------------------

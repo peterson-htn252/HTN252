@@ -8,7 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Heart, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
 
-export function LoginForm() {
+interface LoginFormProps {
+  onSwitchToSignup: () => void;
+}
+
+export function LoginForm({ onSwitchToSignup }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const { login, isLoading, error } = useAuth();
@@ -81,10 +85,16 @@ export function LoginForm() {
             </Button>
           </form>
           
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            <p>Demo credentials for testing:</p>
-            <p className="font-mono text-xs mt-1">
-              You'll need to register an NGO first using the backend API
+          <div className="mt-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              Don't have an account?{' '}
+              <button
+                type="button"
+                onClick={onSwitchToSignup}
+                className="text-primary hover:underline font-medium"
+              >
+                Create NGO account
+              </button>
             </p>
           </div>
         </CardContent>

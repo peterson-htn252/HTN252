@@ -3,7 +3,7 @@
 import { DashboardHeader } from "@/components/dashboard-header"
 import { FinancialOverview } from "@/components/financial-overview"
 import { AidRecipients } from "@/components/aid-recipients"
-import { LoginForm } from "@/components/login-form"
+import { AuthWrapper } from "@/components/auth-wrapper"
 import { useAuth } from "@/contexts/auth-context"
 import { Loader2 } from "lucide-react"
 
@@ -19,7 +19,7 @@ export default function NGODashboard() {
   }
 
   if (!isAuthenticated) {
-    return <LoginForm />
+    return <AuthWrapper />
   }
 
   return (

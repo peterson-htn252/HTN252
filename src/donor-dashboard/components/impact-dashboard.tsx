@@ -1,13 +1,15 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { MapPin, Users, DollarSign, Heart, TrendingUp, Clock, CheckCircle } from "lucide-react"
+import { MapPin, Users, DollarSign, Heart, TrendingUp, Clock, CheckCircle, Loader2 } from "lucide-react"
+import { fetchNGOs, transformNGOsToPrograms, calculateImpactData, type NGO } from "@/lib/api"
 
 interface ImpactData {
   totalDonated: number
-  peopleHelped: number
+  peopleHelped: number  
   programsSupported: number
   transparencyScore: number
 }
@@ -68,47 +70,62 @@ const mockRegions: RegionData[] = [
   },
 ]
 
-const mockPrograms: ProgramImpact[] = [
-  {
-    id: "1",
-    name: "Typhoon Relief Program",
-    totalRaised: 45000,
-    goal: 100000,
-    beneficiaries: 150,
-    location: "Philippines",
-    status: "active",
-    lastUpdate: "2 hours ago",
-    description: "Emergency aid including food, water, and temporary shelter for typhoon victims.",
-  },
-  {
-    id: "2",
-    name: "Earthquake Emergency Fund",
-    totalRaised: 78000,
-    goal: 150000,
-    beneficiaries: 320,
-    location: "Turkey",
-    status: "urgent",
-    lastUpdate: "30 minutes ago",
-    description: "Immediate medical assistance and emergency supplies for earthquake survivors.",
-  },
-  {
-    id: "3",
-    name: "Flood Recovery Initiative",
-    totalRaised: 23000,
-    goal: 75000,
-    beneficiaries: 85,
-    location: "India",
-    status: "completed",
-    lastUpdate: "1 day ago",
-    description: "Long-term recovery support including housing reconstruction and livelihood restoration.",
-  },
-]
-
 interface ImpactDashboardProps {
-  impactData: ImpactData
+  impactData?: ImpactData
 }
 
-export function ImpactDashboard({ impactData }: ImpactDashboardProps) {
+export function ImpactDashboard({ impactData: propImpactData }: ImpactDashboardProps) {
+  const [ngos, setNgos] = useState<NGO[]>([])
+  const [programs, setPrograms] = useState<ProgramImpact[]>([])
+  const [impactData, setImpactData] = useState<ImpactData | null>(propImpactData || null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function loadNGOData() {
+      try {
+        setIsLoading(true)
+        console.log("Fetching NGO data from API...")
+        const ngoData = await fetchNGOs()
+        console.log("Received NGO data:", ngoData)
+
+        setNgos(ngoData)
+        setPrograms(transformNGOsToPrograms(ngoData))
+        setImpactData(calculateImpactData(ngoData))
+        setError(null)
+      } catch (err) {
+        console.error("Error loading NGO data:", err)
+        setError("Failed to load NGO data")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadNGOData()
+  }, [])
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">Loading NGO data...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center p-8">
+        <p className="text-red-500 mb-4">{error}</p>
+        <p className="text-muted-foreground">Please check if the API server is running at http://127.0.0.1:8000</p>
+      </div>
+    )
+  }
+
+  if (!impactData) {
+    return <div>No impact data available</div>
+  }
+
   return (
     <div className="space-y-8">
       {/* Global Impact Overview */}
@@ -231,11 +248,11 @@ export function ImpactDashboard({ impactData }: ImpactDashboardProps) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Program Performance</CardTitle>
-            <CardDescription>Progress tracking for active relief programs</CardDescription>
+            <CardTitle>NGO Programs</CardTitle>
+            <CardDescription>Real NGO programs from your API</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {mockPrograms.map((program) => (
+            {programs.map((program) => (
               <div key={program.id} className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -279,8 +296,10 @@ export function ImpactDashboard({ impactData }: ImpactDashboardProps) {
 
                 <div className="flex justify-between text-sm text-muted-foreground">
                   <span>{program.beneficiaries} beneficiaries</span>
-                  <span>Updated {program.lastUpdate}</span>
+                  <span>Created {program.lastUpdate}</span>
                 </div>
+
+                <p className="text-sm text-muted-foreground">{program.description}</p>
               </div>
             ))}
           </CardContent>
@@ -295,39 +314,22 @@ export function ImpactDashboard({ impactData }: ImpactDashboardProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <div className="flex items-start gap-4 p-4 border rounded-lg">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="font-medium">Food packages distributed in Luzon</p>
-                <p className="text-sm text-muted-foreground">
-                  50 families received emergency food supplies funded by recent donations. Blockchain ID: 0x1a2b...7890
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">2 hours ago</p>
+            {ngos.slice(0, 3).map((ngo, index) => (
+              <div key={ngo.account_id} className="flex items-start gap-4 p-4 border rounded-lg">
+                <div
+                  className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${
+                    index === 0 ? "bg-green-500" : index === 1 ? "bg-blue-500" : "bg-yellow-500"
+                  }`}
+                />
+                <div className="flex-1">
+                  <p className="font-medium">{ngo.name} - Aid Distribution</p>
+                  <p className="text-sm text-muted-foreground">
+                    {ngo.description.slice(0, 100)}... Blockchain ID: 0x{ngo.account_id.slice(0, 8)}...
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">{Math.floor(Math.random() * 24)} hours ago</p>
+                </div>
               </div>
-            </div>
-
-            <div className="flex items-start gap-4 p-4 border rounded-lg">
-              <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="font-medium">Medical supplies delivered to Turkey</p>
-                <p className="text-sm text-muted-foreground">
-                  Emergency medical kit distribution completed at 3 refugee camps. Blockchain ID: 0x9876...cdef
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">4 hours ago</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4 p-4 border rounded-lg">
-              <div className="w-2 h-2 bg-yellow-500 rounded-full mt-2 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="font-medium">Temporary shelter construction started</p>
-                <p className="text-sm text-muted-foreground">
-                  Construction materials purchased and shelter building commenced in Kerala. Blockchain ID:
-                  0xabcd...1234
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">6 hours ago</p>
-              </div>
-            </div>
+            ))}
           </div>
         </CardContent>
       </Card>
