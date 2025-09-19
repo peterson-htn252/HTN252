@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CreditCard, Shield, CheckCircle, AlertCircle, Loader2, Wallet } from "lucide-react"
-import { fetchNGOs } from "@/lib/api"
+import { fetchNGOs, API_URL } from "@/lib/api"
 import { StripePay } from "@/components/StripePay"
 
 interface DonationFormProps {
@@ -213,11 +213,15 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     setIsProcessing(true)
     setStep("processing")
     try {
-      const res = await fetch("/api/payments/xrpl", {
+      if (!selectedProgramData?.xrpl_address) {
+        throw new Error("Program is missing an XRPL address")
+      }
+      const res = await fetch(`${API_URL}/donor/xrpl/send-dev`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: Number.parseFloat(donationAmount),
+          to: selectedProgramData.xrpl_address,
+          amountXrp: Number.parseFloat(donationAmount),
           programId: selectedProgram,
           email,
         }),
@@ -247,15 +251,16 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     setIsProcessing(true)
     setStep("processing")
     try {
-      const r = await fetch("/api/payments/fulfill", {
+      const r = await fetch(`${API_URL}/donor/payments/fulfill`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": paymentIntentId },
         body: JSON.stringify({
-          paymentIntentId,
+          paymentIntentId: paymentIntentId,
           overrideAddress: selectedProgramData?.xrpl_address || undefined,
         }),
       })
       const data = await r.json()
+      console.log("Fulfill response:", data, r)
       if (!r.ok) throw new Error(data.error || "Fulfillment failed")
 
       setDonationResult({
