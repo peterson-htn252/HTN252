@@ -10,6 +10,7 @@ from core.database import (
     TBL_PENDING_FACE_MAPS,
     TBL_RECIPIENTS,
 )
+from core.encryption import encrypt_face_embedding, decrypt_face_embedding
 from core.utils import now_iso
 from core.xrpl import derive_address_from_public_key
 
@@ -168,11 +169,15 @@ async def face_enroll(
         raise HTTPException(400, "No faces detected in batch")
 
     centroid = _mean_centroid(embs)
+    try:
+        encrypted_embedding = encrypt_face_embedding(centroid)
+    except RuntimeError as exc:
+        raise HTTPException(500, "Face embedding encryption key not configured") from exc
 
     row = {
         "face_id": str(uuid.uuid4()),
         "session_id": session_id,
-        "embedding": json.dumps([float(x) for x in centroid.tolist()]),
+        "encrypted_embedding": encrypted_embedding,
         "model": "buffalo_l",
         "meta": json.dumps({"frames_used": used, "source": "enroll_pending_mean"}),
         "created_at": now_iso(),
@@ -208,6 +213,10 @@ async def face_promote(
         raise HTTPException(404, "Pending face map not found for this session")
 
     row = items[0]
+
+    ciphertext = row.get("encrypted_embedding")
+    if not ciphertext:
+        raise HTTPException(500, "Pending face map missing encrypted data")
 
     # look up account by name (disambiguate if needed)
     acct = TBL_RECIPIENTS.scan(
@@ -296,16 +305,29 @@ async def face_identify_batch(
     mismatched = 0
     for it in items:
         try:
-            e = np.asarray(json.loads(it.get("embedding", "[]")), dtype=np.float32)
+            ciphertext = it.get("encrypted_embedding")
+            if not ciphertext:
+                mismatched += 1
+                continue
+
+            try:
+                e = decrypt_face_embedding(ciphertext)
+            except RuntimeError as exc:
+                raise HTTPException(500, "Face embedding encryption key not configured") from exc
+
             if e.size != unk.size:
                 mismatched += 1
                 continue
+
             score = _cosine(unk, e)
             scored.append({
                 "recipient_id": it.get("recipient_id"),
                 "face_id": it.get("face_id"),
                 "score": float(score),
             })
+        except ValueError:
+            mismatched += 1
+            continue
         except Exception:
             continue
 
