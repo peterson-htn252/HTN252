@@ -311,3 +311,4 @@ Thumbs.db
 # Local configuration files
 config.local.*
 settings.local.*
+src/process.env
