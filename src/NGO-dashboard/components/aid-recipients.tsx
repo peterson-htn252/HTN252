@@ -198,7 +198,6 @@ export function AidRecipients() {
       // Refresh the recipients list
       const response = await apiClient.getRecipients()
       const transformedRecipients = response.recipients.map(transformRecipient)
-      console.log(transformedRecipients)
       setRecipients(transformedRecipients)
 
       toast({

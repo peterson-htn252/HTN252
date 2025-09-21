@@ -71,10 +71,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       const accountData = await apiClient.register(registrationData);
       
-      // Account created successfully - for now we just return without authentication
-      // In a real app, you might want to automatically log them in or redirect to login
-      console.log('Account created with ID:', accountData.account_id);
-      
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
       throw err;

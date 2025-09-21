@@ -25,7 +25,6 @@ def create_quote(body: QuoteRequest):
 def redeem(body: RedeemBody):
     # Get recipient and validate they exist
     recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": body.recipient_id}).get("Item")
-    print(recipient)
     if not recipient:
         raise HTTPException(404, "Recipient not found")
     

@@ -595,7 +595,7 @@ def manage_recipient_balance(
         if rec.get("ngo_id") != ngo["account_id"]:
             raise HTTPException(status_code=404, detail="Recipient not found")
 
-        current_balance = _usd(rec.get("balance", 0.0), positive=False)
+        current_balance = _usd(wallet_balance_usd(WalletBalanceUSDRequest(public_key=rec.get("public_key"))).get("balance_usd"), positive=False)
 
         from core.xrpl import wallet_to_wallet_send
 
@@ -620,8 +620,6 @@ def manage_recipient_balance(
                     memos=[memo],
                 )
             except Exception as e:
-                print(e)
-                print(traceback.format_exc())
                 raise HTTPException(status_code=502, detail=f"Wallet transfer failed: {e}")
 
             if not tx_hash:

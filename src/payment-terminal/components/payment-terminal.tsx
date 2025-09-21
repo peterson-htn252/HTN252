@@ -60,7 +60,7 @@ export function PaymentTerminal() {
           }
         }
       } catch (error) {
-        console.log("Error checking for transaction:", error)
+        console.error("Error checking for transaction:", error)
       }
     }
 
@@ -158,7 +158,6 @@ export function PaymentTerminal() {
       }
 
       const redeemData = await redeemRes.json()
-      console.log("Payment processed successfully:", redeemData)
       
       // Payment successful
       handlePaymentComplete()

@@ -85,9 +85,7 @@ export function ImpactDashboard({ impactData: propImpactData }: ImpactDashboardP
     async function loadNGOData() {
       try {
         setIsLoading(true)
-        console.log("Fetching NGO data from API...")
         const ngoData = await fetchNGOs()
-        console.log("Received NGO data:", ngoData)
 
         setNgos(ngoData)
         setPrograms(transformNGOsToPrograms(ngoData))
