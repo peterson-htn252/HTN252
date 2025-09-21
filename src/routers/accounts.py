@@ -31,12 +31,14 @@ from core.xrpl import (
 # Supabase client
 # -----------------------------------------------------------------------------
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv(
+    "SUPABASE_ANON_KEY"
+)
 
-if not SUPABASE_URL or not SUPABASE_KEY:
+if not SUPABASE_URL or not SUPABASE_PUBLISHABLE_KEY:
     raise RuntimeError("Missing Supabase configuration")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
 
 router = APIRouter()
 
@@ -472,7 +474,6 @@ def create_recipient(body: RecipientCreate, current_user: dict = Depends(verify_
             "ngo_id": ngo_id,
             "name": body.name,
             "location": body.location,
-            "balance": 0.0,
             "public_key": public_key,
             "private_key": private_key,
             "address": address,

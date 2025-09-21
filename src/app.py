@@ -6,13 +6,13 @@ FastAPI APIs for NGO voucher system on XRPL (wallet-less stores) + Facial Recogn
   credentials (VC-JWT HMAC for dev), dashboard metrics, and facial embeddings enroll/identify
 
 Notes:
-- Supabase Postgres is used (service role in backend). Create tables from the schema I provided earlier.
+- Supabase Postgres is used (publishable key expected in backend). Create tables from the schema I provided earlier.
 - XRPL and signing are simplified for a hackathon; swap in real KMS/HSM for prod.
 - InsightFace runs in CPU mode by default here.
 
 Run:
   pip install fastapi uvicorn supabase insightface onnxruntime opencv-python-headless numpy passlib[bcrypt] pyjwt xrpl-py
-  export SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... JWT_SECRET=... APP_SECRET=...
+  export SUPABASE_URL=... SUPABASE_PUBLISHABLE_KEY=... JWT_SECRET=... APP_SECRET=...
   uvicorn app:app --reload --port 8000
 """
 

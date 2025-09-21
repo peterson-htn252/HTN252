@@ -87,7 +87,6 @@ export function AidRecipients() {
 
         const response = await apiClient.getRecipients(searchTerm || undefined)
         const transformedRecipients = response.recipients.map(transformRecipient)
-        console.log(transformedRecipients[0].walletBalance)
         setRecipients(transformedRecipients)
         updateRecipientBalance(selectedRecipient?.id || "")
       } catch (err) {

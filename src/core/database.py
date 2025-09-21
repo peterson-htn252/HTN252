@@ -4,10 +4,10 @@ from typing import Optional, Dict
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 
-from .config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+from .config import SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY
 
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
 
 
 class SupabaseTable:
