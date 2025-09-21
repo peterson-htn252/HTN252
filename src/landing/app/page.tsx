@@ -4,6 +4,22 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Shield, Eye, Zap, Users, ArrowRight, Globe, Heart, DollarSign } from "lucide-react"
 
+const DONOR_DASHBOARD_URL = process.env.NEXT_PUBLIC_DONOR_DASHBOARD_URL ?? "http://localhost:3000"
+const NGO_DASHBOARD_URL = process.env.NEXT_PUBLIC_NGO_DASHBOARD_URL ?? "http://localhost:3001"
+const NGO_ONBOARDING_URL = process.env.NEXT_PUBLIC_NGO_ONBOARDING_URL ?? NGO_DASHBOARD_URL
+const SIGN_IN_URL = process.env.NEXT_PUBLIC_SIGN_IN_URL ?? DONOR_DASHBOARD_URL
+
+function buildProgramLink(baseUrl: string, programId: number) {
+  try {
+    const url = new URL(baseUrl)
+    url.searchParams.set("program", String(programId))
+    return url.toString()
+  } catch {
+    const separator = baseUrl.includes("?") ? "&" : "?"
+    return `${baseUrl}${separator}program=${encodeURIComponent(String(programId))}`
+  }
+}
+
 export default function DonationPlatform() {
   const placeholderImage =
     "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=800&q=80"
@@ -67,7 +83,7 @@ export default function DonationPlatform() {
               About
             </a>
             <Button asChild variant="outline" size="sm">
-              <a href="http://localhost:3000">Sign In</a>
+              <a href={SIGN_IN_URL}>Sign In</a>
             </Button>
           </nav>
         </div>
@@ -89,12 +105,12 @@ export default function DonationPlatform() {
             </p>
             <div className="mt-10 flex items-center justify-center gap-x-6">
               <Button asChild size="lg" className="text-lg px-8 py-6">
-                <a href="http://localhost:3000">
+                <a href={DONOR_DASHBOARD_URL}>
                   Browse Programs
                 </a>
               </Button>
               <Button asChild variant="outline" size="lg" className="text-lg px-8 py-6 bg-transparent">
-                <a href="http://localhost:3001">
+                <a href={NGO_ONBOARDING_URL}>
                   Join as NGO
                 </a>
               </Button>
@@ -145,7 +161,7 @@ export default function DonationPlatform() {
                       <Progress value={(program.raised / program.goal) * 100} className="h-2" />
                     </div>
                     <Button asChild className="w-full">
-                      <a href={`http://localhost:3000?program=${program.id}`}>
+                      <a href={buildProgramLink(DONOR_DASHBOARD_URL, program.id)}>
                         <DollarSign className="mr-2 h-4 w-4" />
                         Donate Now
                       </a>
@@ -158,7 +174,7 @@ export default function DonationPlatform() {
 
           <div className="text-center mt-12">
             <Button asChild variant="outline" size="lg">
-              <a href="http://localhost:3000">
+              <a href={DONOR_DASHBOARD_URL}>
                 View All Programs
                 <ArrowRight className="ml-2 h-5 w-5" />
               </a>
@@ -321,7 +337,7 @@ export default function DonationPlatform() {
             </p>
             <div className="mt-8 flex items-center justify-center gap-x-6">
               <Button asChild size="lg" variant="secondary" className="text-lg px-8 py-6">
-                <a href="http://localhost:3000">
+                <a href={DONOR_DASHBOARD_URL}>
                   Start Donating
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </a>
@@ -332,7 +348,7 @@ export default function DonationPlatform() {
                 variant="outline"
                 className="text-lg px-8 py-6 border-primary-foreground text-primary-foreground hover:bg-primary-foreground hover:text-primary bg-transparent"
               >
-                <a href="http://localhost:3001">
+                <a href={NGO_ONBOARDING_URL}>
                   Join as NGO
                 </a>
               </Button>
@@ -341,99 +357,6 @@ export default function DonationPlatform() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="bg-sidebar text-sidebar-foreground py-12">
-        <div className="container mx-auto max-w-7xl px-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div>
-              <div className="flex items-center space-x-2 mb-4">
-                <Heart className="h-6 w-6 text-sidebar-accent" />
-                <span className="text-lg font-bold">RippleRelief</span>
-              </div>
-              <p className="text-sm text-sidebar-foreground/80">
-                Transparent donations powered by blockchain technology.
-              </p>
-            </div>
-
-            <div>
-              <h3 className="font-semibold mb-4">Platform</h3>
-              <ul className="space-y-2 text-sm text-sidebar-foreground/80">
-                <li>
-                  <a href="#" className="hover:text-sidebar-foreground transition-colors">
-                    Features
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-sidebar-foreground transition-colors">
-                    How It Works
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-sidebar-foreground transition-colors">
-                    Pricing
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-sidebar-foreground transition-colors">
-                    Documentation
-                  </a>
-                </li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-semibold mb-4">Company</h3>
-              <ul className="space-y-2 text-sm text-sidebar-foreground/80">
-                <li>
-                  <a href="#" className="hover:text-sidebar-foreground transition-colors">
-                    About
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-sidebar-foreground transition-colors">
-                    Blog
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-sidebar-foreground transition-colors">
-                    Careers
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-sidebar-foreground transition-colors">
-                    Contact
-                  </a>
-                </li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-semibold mb-4">Legal</h3>
-              <ul className="space-y-2 text-sm text-sidebar-foreground/80">
-                <li>
-                  <a href="#" className="hover:text-sidebar-foreground transition-colors">
-                    Privacy Policy
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-sidebar-foreground transition-colors">
-                    Terms of Service
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-sidebar-foreground transition-colors">
-                    Cookie Policy
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="border-t border-sidebar-border mt-8 pt-8 text-center text-sm text-sidebar-foreground/60">
-            <p>&copy; 2025 RippleRelief. Built for HTN25 hackathon. Powered by Ripple XRPL.</p>
-          </div>
-        </div>
-      </footer>
     </div>
   )
 }
