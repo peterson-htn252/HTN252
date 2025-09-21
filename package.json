@@ -1,0 +1,25 @@
+{
+  "name": "htn252",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "src/landing",
+    "src/donor-dashboard",
+    "src/store-dashboard",
+    "src/NGO-dashboard",
+    "src/payment-terminal",
+    "src/user-creation-terminal"
+  ],
+  "scripts": {
+    "dev:landing": "npm run dev --workspace landing-page",
+    "dev:donor": "npm run dev --workspace donor-dashboard",
+    "dev:store": "npm run dev --workspace store-dashboard",
+    "dev:ngo": "npm run dev --workspace ngo-dashboard",
+    "dev:terminal": "npm run dev --workspace payment-terminal",
+    "dev:user": "npm run dev --workspace user-creation-terminal",
+    "dev:dashboards": "concurrently \"npm run dev --workspace donor-dashboard\" \"npm run dev --workspace ngo-dashboard\" \"npm run dev --workspace store-dashboard\" \"npm run dev --workspace payment-terminal\" \"npm run dev --workspace user-creation-terminal\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
