@@ -1,11 +1,13 @@
 # routes/accounts.py
+import asyncio
 import os
 import traceback
 import uuid
 from decimal import Decimal, ROUND_DOWN
 from typing import List, Optional, Tuple, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends
+import jwt
+from fastapi import APIRouter, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect
 
 from routers.financial import wallet_balance_usd
 from supabase import create_client, Client
@@ -19,6 +21,7 @@ from models import (
     WalletBalanceUSDRequest,
 )
 from core.auth import hash_password, verify_password, create_access_token, verify_token
+from core.config import JWT_ALGORITHM, JWT_SECRET
 from core.utils import now_iso
 from core.xrpl import (
     derive_address_from_public_key,
@@ -409,6 +412,83 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@router.websocket("/ws/accounts/dashboard/balance")
+async def stream_dashboard_balance(websocket: WebSocket, token: str = Query(default=None)):
+    """Provide live updates for the NGO dashboard available funds via websocket."""
+
+    if not token:
+        await websocket.close(code=4401, reason="Authentication required")
+        return
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        account_id = payload.get("sub")
+        if not account_id:
+            await websocket.close(code=4401, reason="Invalid token payload")
+            return
+    except jwt.ExpiredSignatureError:
+        await websocket.close(code=4401, reason="Token expired")
+        return
+    except jwt.InvalidTokenError:
+        await websocket.close(code=4401, reason="Invalid token")
+        return
+    except Exception:
+        await websocket.close(code=1011, reason="Authentication failed")
+        return
+
+    await websocket.accept()
+
+    async def load_balance_snapshot() -> Tuple[int, str]:
+        def _snapshot() -> Tuple[int, str]:
+            account = _get_account_by_id(account_id)
+            if account.get("account_type") != "NGO":
+                raise PermissionError("NGO account required")
+
+            addr = account.get("address") or (
+                derive_address_from_public_key(account["public_key"])
+                if account.get("public_key")
+                else None
+            )
+
+            if not addr:
+                return 0, now_iso()
+
+            usd = _wallet_usd(addr)
+            cents = int((usd * Decimal(100)).to_integral_value(rounding=ROUND_DOWN))
+            return cents, now_iso()
+
+        return await asyncio.to_thread(_snapshot)
+
+    previous_balance: Optional[int] = None
+    try:
+        while True:
+            try:
+                available_cents, timestamp = await load_balance_snapshot()
+            except PermissionError:
+                await websocket.close(code=4403, reason="NGO account required")
+                return
+            except HTTPException as exc:
+                code = 4404 if exc.status_code == 404 else 1011
+                await websocket.close(code=code, reason=exc.detail)
+                return
+            except Exception:
+                available_cents, timestamp = 0, now_iso()
+
+            if previous_balance is None or available_cents != previous_balance:
+                await websocket.send_json(
+                    {"available_funds": available_cents, "last_updated": timestamp}
+                )
+                previous_balance = available_cents
+
+            await asyncio.sleep(5)
+    except WebSocketDisconnect:
+        return
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        await websocket.close(code=1011, reason="Internal server error")
+
+
 @router.get("/accounts/recipients", tags=["accounts", "recipients"])
 def list_recipients(
     current_user: dict = Depends(verify_token),
@@ -515,7 +595,7 @@ def manage_recipient_balance(
         if rec.get("ngo_id") != ngo["account_id"]:
             raise HTTPException(status_code=404, detail="Recipient not found")
 
-        current_balance = _usd(rec.get("balance", 0.0), positive=False)
+        current_balance = _usd(wallet_balance_usd(WalletBalanceUSDRequest(public_key=rec.get("public_key"))).get("balance_usd"), positive=False)
 
         from core.xrpl import wallet_to_wallet_send
 
@@ -540,8 +620,6 @@ def manage_recipient_balance(
                     memos=[memo],
                 )
             except Exception as e:
-                print(e)
-                print(traceback.format_exc())
                 raise HTTPException(status_code=502, detail=f"Wallet transfer failed: {e}")
 
             if not tx_hash:

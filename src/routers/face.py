@@ -172,8 +172,6 @@ async def face_enroll(
     try:
         encrypted_embedding = encrypt_face_embedding(centroid)
     except RuntimeError as exc:
-        import traceback
-        traceback.print_exc()
         raise HTTPException(500, "Face embedding encryption key not configured") from exc
 
     row = {

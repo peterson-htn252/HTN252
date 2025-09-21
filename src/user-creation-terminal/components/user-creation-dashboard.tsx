@@ -41,7 +41,6 @@ export function UserCreationDashboard() {
       body: fd,
     })
     const data = await res.json()
-    console.log("Face enroll response:", data)
     if (!data || !data.face_id) {
       alert("Face enrollment failed. Please try again.")
       return
