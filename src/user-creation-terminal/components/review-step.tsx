@@ -11,21 +11,31 @@ interface ReviewStepProps {
   onComplete: (updatedData: any) => void
 }
 
+type FieldName =
+  | "firstName"
+  | "lastName"
+  | "dateOfBirth"
+  | "idNumber"
+  | "address"
+  | "expirationDate"
+
+type IDFormData = Record<FieldName, string>
+
 export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
   if (!extractedData) return null
 
-  const [formData, setFormData] = useState({
-    firstName: extractedData.firstName,
-    lastName: extractedData.lastName,
-    dateOfBirth: extractedData.dateOfBirth,
-    idNumber: extractedData.idNumber,
-    address: extractedData.address,
-    expirationDate: extractedData.expirationDate,
+  const [formData, setFormData] = useState<IDFormData>({
+    firstName: String(extractedData.firstName ?? ""),
+    lastName: String(extractedData.lastName ?? ""),
+    dateOfBirth: String(extractedData.dateOfBirth ?? ""),
+    idNumber: String(extractedData.idNumber ?? ""),
+    address: String(extractedData.address ?? ""),
+    expirationDate: String(extractedData.expirationDate ?? ""),
   })
 
   const [isEditing, setIsEditing] = useState(false)
 
-  const dataFields = [
+  const dataFields: { icon: any; label: string; name: FieldName; type: "text" | "date" }[] = [
     { icon: User, label: "First Name", name: "firstName", type: "text" },
     { icon: User, label: "Last Name", name: "lastName", type: "text" },
     { icon: Calendar, label: "Date of Birth", name: "dateOfBirth", type: "date" },
