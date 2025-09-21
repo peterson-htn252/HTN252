@@ -474,7 +474,6 @@ def create_recipient(body: RecipientCreate, current_user: dict = Depends(verify_
             "ngo_id": ngo_id,
             "name": body.name,
             "location": body.location,
-            "balance": 0.0,
             "public_key": public_key,
             "private_key": private_key,
             "address": address,

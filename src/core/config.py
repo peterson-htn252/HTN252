@@ -5,8 +5,11 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY")
-if not SUPABASE_URL or not SUPABASE_PUBLISHABLE_KEY:
-    raise RuntimeError("Missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY")
+if not SUPABASE_URL:
+    raise RuntimeError("Missing SUPABASE_URL")
+
+if not SUPABASE_PUBLISHABLE_KEY:
+    raise RuntimeError("Missing SUPABASE_PUBLISHABLE_KEY")
 
 XRPL_RPC_URL = os.getenv("XRPL_RPC_URL", "https://s.altnet.rippletest.net:51234")
 XRPL_NETWORK = os.getenv("XRPL_NETWORK", "testnet")
