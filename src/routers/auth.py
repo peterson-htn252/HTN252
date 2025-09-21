@@ -18,14 +18,16 @@ def list_public_ngos():
             ExpressionAttributeNames={"#status": "status"},
             ExpressionAttributeValues={":status": "active"}
         )
-        ngos = []
-        for item in response.get("Items", []):
-            ngos.append({
+        items = response.get("Items", [])
+        ngos = [
+            {
                 "ngo_id": item.get("ngo_id"),
                 "organization_name": item.get("organization_name"),
                 "description": item.get("description"),
-                "status": item.get("status", "active")
-            })
+                "status": item.get("status", "active"),
+            }
+            for item in items
+        ]
         return {"ngos": ngos}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch NGOs: {str(e)}")

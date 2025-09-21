@@ -1,9 +1,7 @@
-from datetime import datetime, timedelta, timezone
-
 from fastapi import APIRouter, Depends, HTTPException
 
 from core.auth import get_current_ngo
-from core.database import TBL_RECIPIENTS, TBL_DONATIONS, TBL_EXPENSES
+from core.database import TBL_ACCOUNTS, TBL_NGO_EXPENSES, TBL_RECIPIENTS
 from core.utils import now_iso
 from core.wallet import get_wallet_balance, resolve_classic_address
 
@@ -23,8 +21,6 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
         active_recipients = len(recipients_resp.get("Items", []))
         
         # Get NGO account details
-        from core.database import TBL_ACCOUNTS, TBL_NGO_EXPENSES
-
         account = TBL_ACCOUNTS.get_item(Key={"account_id": ngo_id}).get("Item")
         if not account:
             raise HTTPException(status_code=404, detail="NGO account not found")
@@ -79,5 +75,3 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-
-

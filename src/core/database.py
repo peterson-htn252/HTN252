@@ -2,8 +2,6 @@ import os
 from typing import Optional, Dict
 
 from supabase import create_client, Client
-from supabase.lib.client_options import ClientOptions
-
 from .config import SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY
 
 
