@@ -24,7 +24,7 @@ jobs:
       - id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: my-backend
+          service: relief-app
           region: us-central1
           source: src           # <— deploy from source (Buildpacks)
           allow-unauthenticated: true
