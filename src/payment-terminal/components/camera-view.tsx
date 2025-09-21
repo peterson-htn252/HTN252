@@ -64,7 +64,6 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
     // Check if we captured any frames
     if (frames.length === 0) {
       setVerificationProgress(0)
-      setIsCapturing(false)
       setError("No frames captured")
       onVerificationComplete?.({ success: false })
       return
