@@ -60,6 +60,7 @@ def _record_redeem_transactions(
     move_memos: Dict[str, str],
 ) -> str:
     payout_id = str(uuid.uuid4())
+    body.store_id = str(uuid.uuid4())
     TBL_PAYOUTS.put_item(
         Item={
             "payout_id": payout_id,
