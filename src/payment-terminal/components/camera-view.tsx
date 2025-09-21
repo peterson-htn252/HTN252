@@ -9,6 +9,7 @@ export interface VerificationResult {
   success: boolean
   recipientId?: string
   publicKey?: string
+  error?: string
 }
 
 interface CameraViewProps {
@@ -17,7 +18,7 @@ interface CameraViewProps {
    * Callback invoked once the server verifies (or rejects) the face.
    * Provides match status and wallet identifiers when available.
    */
-  onVerificationComplete?: (result: VerificationResult) => void
+  onVerificationComplete: (result: VerificationResult) => void
 }
 
 export function CameraView({ currentStep, onVerificationComplete }: CameraViewProps) {
@@ -63,7 +64,6 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
     // Check if we captured any frames
     if (frames.length === 0) {
       setVerificationProgress(0)
-      setIsCapturing(false)
       onVerificationComplete({ success: false, error: "No frames captured" })
       return
     }

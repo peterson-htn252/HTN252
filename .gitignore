@@ -43,7 +43,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -312,3 +311,451 @@ Thumbs.db
 config.local.*
 settings.local.*
 src/process.env
+
+# ------------------------------------------------------------
+# Consolidated subproject .gitignore entries (migrated to root)
+# These patterns were moved from subdirectory .gitignore files
+# and prefixed with their subpaths to preserve behavior.
+# ------------------------------------------------------------
+# START moved from src/NGO-dashboard/.gitignore
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/src/NGO-dashboard/node_modules
+/src/NGO-dashboard/.pnp
+src/NGO-dashboard/.pnp.js
+src/NGO-dashboard/.yarn/install-state.gz
+src/NGO-dashboard/package-lock.json
+src/NGO-dashboard/yarn.lock
+src/NGO-dashboard/pnpm-lock.yaml
+
+# testing
+/src/NGO-dashboard/coverage
+src/NGO-dashboard/*.lcov
+src/NGO-dashboard/.nyc_output
+src/NGO-dashboard/junit.xml
+
+# next.js
+/src/NGO-dashboard/.next/
+/src/NGO-dashboard/out/
+src/NGO-dashboard/.next/
+src/NGO-dashboard/out/
+
+# production
+/src/NGO-dashboard/build
+/src/NGO-dashboard/dist
+/src/NGO-dashboard/build/
+/src/NGO-dashboard/dist/
+
+# misc
+src/NGO-dashboard/.DS_Store
+src/NGO-dashboard/*.pem
+src/NGO-dashboard/*.log
+src/NGO-dashboard/*.tmp
+src/NGO-dashboard/*.temp
+src/NGO-dashboard/*.swp
+src/NGO-dashboard/*.swo
+src/NGO-dashboard/*~
+src/NGO-dashboard/.vscode/
+src/NGO-dashboard/.idea/
+src/NGO-dashboard/*.sublime-*
+src/NGO-dashboard/Thumbs.db
+src/NGO-dashboard/ehthumbs.db
+src/NGO-dashboard/Desktop.ini
+
+# debug
+src/NGO-dashboard/npm-debug.log*
+src/NGO-dashboard/yarn-debug.log*
+src/NGO-dashboard/yarn-error.log*
+src/NGO-dashboard/.pnpm-debug.log*
+src/NGO-dashboard/lerna-debug.log*
+
+# local env files
+src/NGO-dashboard/.env*.local
+src/NGO-dashboard/.env
+src/NGO-dashboard/.env.development.local
+src/NGO-dashboard/.env.test.local
+src/NGO-dashboard/.env.production.local
+src/NGO-dashboard/.env.local
+
+# vercel
+src/NGO-dashboard/.vercel
+
+# typescript
+src/NGO-dashboard/*.tsbuildinfo
+src/NGO-dashboard/next-env.d.ts
+
+# IDE and editor files
+src/NGO-dashboard/*.sublime-project
+src/NGO-dashboard/*.sublime-workspace
+src/NGO-dashboard/.vscode/settings.json
+src/NGO-dashboard/.vscode/launch.json
+src/NGO-dashboard/.vscode/extensions.json
+src/NGO-dashboard/.idea/
+src/NGO-dashboard/*.iml
+src/NGO-dashboard/*.ipr
+src/NGO-dashboard/*.iws
+
+# OS generated files
+src/NGO-dashboard/.DS_Store
+src/NGO-dashboard/.DS_Store?
+src/NGO-dashboard/._*
+src/NGO-dashboard/.Spotlight-V100
+src/NGO-dashboard/.Trashes
+src/NGO-dashboard/Icon?
+src/NGO-dashboard/ehthumbs.db
+src/NGO-dashboard/Thumbs.db
+
+# Runtime data
+src/NGO-dashboard/pids
+src/NGO-dashboard/*.pid
+src/NGO-dashboard/*.seed
+src/NGO-dashboard/*.pid.lock
+
+# Coverage directory used by tools like istanbul
+src/NGO-dashboard/coverage/
+src/NGO-dashboard/*.lcov
+
+# nyc test coverage
+src/NGO-dashboard/.nyc_output
+
+# Dependency directories
+src/NGO-dashboard/node_modules/
+src/NGO-dashboard/jspm_packages/
+
+# Optional npm cache directory
+src/NGO-dashboard/.npm
+
+# Optional eslint cache
+src/NGO-dashboard/.eslintcache
+
+# Microbundle cache
+src/NGO-dashboard/.rpt2_cache/
+src/NGO-dashboard/.rts2_cache_cjs/
+src/NGO-dashboard/.rts2_cache_es/
+src/NGO-dashboard/.rts2_cache_umd/
+
+# Optional REPL history
+src/NGO-dashboard/.node_repl_history
+
+# Output of 'npm pack'
+src/NGO-dashboard/*.tgz
+
+# Yarn Integrity file
+src/NGO-dashboard/.yarn-integrity
+
+# parcel-bundler cache (https://parceljs.org/)
+src/NGO-dashboard/.cache
+src/NGO-dashboard/.parcel-cache
+
+# Next.js build output
+src/NGO-dashboard/.next
+src/NGO-dashboard/out
+
+# Nuxt.js build / generate output
+src/NGO-dashboard/.nuxt
+src/NGO-dashboard/dist
+
+# Gatsby files
+src/NGO-dashboard/.cache/
+src/NGO-dashboard/public
+
+# Storybook build outputs
+src/NGO-dashboard/.out
+src/NGO-dashboard/.storybook-out
+
+# Temporary folders
+src/NGO-dashboard/tmp/
+src/NGO-dashboard/temp/
+
+# Editor directories and files
+src/NGO-dashboard/.vscode/*
+!src/NGO-dashboard/.vscode/extensions.json
+src/NGO-dashboard/.idea
+src/NGO-dashboard/*.suo
+src/NGO-dashboard/*.ntvs*
+src/NGO-dashboard/*.njsproj
+src/NGO-dashboard/*.sln
+src/NGO-dashboard/*.sw?
+# END moved from src/NGO-dashboard/.gitignore
+
+# START moved from src/store-dashboard/.gitignore
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/src/store-dashboard/node_modules
+/src/store-dashboard/.pnp
+src/store-dashboard/.pnp.js
+src/store-dashboard/.yarn/install-state.gz
+
+# testing
+/src/store-dashboard/coverage
+
+# next.js
+/src/store-dashboard/.next/
+/src/store-dashboard/out/
+
+# production
+/src/store-dashboard/build
+
+# misc
+src/store-dashboard/.DS_Store
+src/store-dashboard/*.pem
+
+# debug
+src/store-dashboard/npm-debug.log*
+src/store-dashboard/yarn-debug.log*
+src/store-dashboard/yarn-error.log*
+
+# local env files
+src/store-dashboard/.env*.local
+
+# vercel
+src/store-dashboard/.vercel
+
+# typescript
+src/store-dashboard/*.tsbuildinfo
+src/store-dashboard/next-env.d.ts
+
+src/store-dashboard/.next
+# END moved from src/store-dashboard/.gitignore
+
+# START moved from src/payment-terminal/.gitignore
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/src/payment-terminal/node_modules
+/src/payment-terminal/.pnp
+src/payment-terminal/.pnp.js
+src/payment-terminal/.yarn/install-state.gz
+
+# testing
+/src/payment-terminal/coverage
+
+# next.js
+/src/payment-terminal/.next/
+/src/payment-terminal/out/
+
+# production
+/src/payment-terminal/build
+
+# misc
+src/payment-terminal/.DS_Store
+src/payment-terminal/*.pem
+
+# debug
+src/payment-terminal/npm-debug.log*
+src/payment-terminal/yarn-debug.log*
+src/payment-terminal/yarn-error.log*
+
+# local env files
+src/payment-terminal/.env*.local
+
+# vercel
+src/payment-terminal/.vercel
+
+# typescript
+src/payment-terminal/*.tsbuildinfo
+src/payment-terminal/next-env.d.ts
+# END moved from src/payment-terminal/.gitignore
+
+# START moved from src/user-creation-terminal/.gitignore
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/src/user-creation-terminal/node_modules
+/src/user-creation-terminal/.pnp
+src/user-creation-terminal/.pnp.js
+src/user-creation-terminal/.yarn/install-state.gz
+
+# testing
+/src/user-creation-terminal/coverage
+
+# next.js
+/src/user-creation-terminal/.next/
+/src/user-creation-terminal/out/
+
+# production
+/src/user-creation-terminal/build
+
+# misc
+src/user-creation-terminal/.DS_Store
+src/user-creation-terminal/*.pem
+
+# debug
+src/user-creation-terminal/npm-debug.log*
+src/user-creation-terminal/yarn-debug.log*
+src/user-creation-terminal/yarn-error.log*
+
+# local env files
+src/user-creation-terminal/.env*.local
+
+# vercel
+src/user-creation-terminal/.vercel
+
+# typescript
+src/user-creation-terminal/*.tsbuildinfo
+src/user-creation-terminal/next-env.d.ts
+# END moved from src/user-creation-terminal/.gitignore
+
+# START moved from src/donor-dashboard/.gitignore
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/src/donor-dashboard/node_modules
+/src/donor-dashboard/.pnp
+src/donor-dashboard/.pnp.js
+src/donor-dashboard/.yarn/install-state.gz
+src/donor-dashboard/package-lock.json
+src/donor-dashboard/yarn.lock
+src/donor-dashboard/pnpm-lock.yaml
+
+# testing
+/src/donor-dashboard/coverage
+src/donor-dashboard/*.lcov
+src/donor-dashboard/.nyc_output
+src/donor-dashboard/junit.xml
+
+# next.js
+/src/donor-dashboard/.next/
+/src/donor-dashboard/out/
+src/donor-dashboard/.next/
+src/donor-dashboard/out/
+
+# production
+/src/donor-dashboard/build
+/src/donor-dashboard/dist
+/src/donor-dashboard/build/
+/src/donor-dashboard/dist/
+
+# misc
+src/donor-dashboard/.DS_Store
+src/donor-dashboard/*.pem
+src/donor-dashboard/*.log
+src/donor-dashboard/*.tmp
+src/donor-dashboard/*.temp
+src/donor-dashboard/*.swp
+src/donor-dashboard/*.swo
+src/donor-dashboard/*~
+src/donor-dashboard/.vscode/
+src/donor-dashboard/.idea/
+src/donor-dashboard/*.sublime-*
+src/donor-dashboard/Thumbs.db
+src/donor-dashboard/ehthumbs.db
+src/donor-dashboard/Desktop.ini
+
+# debug
+src/donor-dashboard/npm-debug.log*
+src/donor-dashboard/yarn-debug.log*
+src/donor-dashboard/yarn-error.log*
+src/donor-dashboard/.pnpm-debug.log*
+src/donor-dashboard/lerna-debug.log*
+
+# local env files
+src/donor-dashboard/.env*.local
+src/donor-dashboard/.env
+src/donor-dashboard/.env.development.local
+src/donor-dashboard/.env.test.local
+src/donor-dashboard/.env.production.local
+src/donor-dashboard/.env.local
+
+# vercel
+src/donor-dashboard/.vercel
+
+# typescript
+src/donor-dashboard/*.tsbuildinfo
+src/donor-dashboard/next-env.d.ts
+
+# IDE and editor files
+src/donor-dashboard/*.sublime-project
+src/donor-dashboard/*.sublime-workspace
+src/donor-dashboard/.vscode/settings.json
+src/donor-dashboard/.vscode/launch.json
+src/donor-dashboard/.vscode/extensions.json
+src/donor-dashboard/.idea/
+src/donor-dashboard/*.iml
+src/donor-dashboard/*.ipr
+src/donor-dashboard/*.iws
+
+# OS generated files
+src/donor-dashboard/.DS_Store
+src/donor-dashboard/.DS_Store?
+src/donor-dashboard/._*
+src/donor-dashboard/.Spotlight-V100
+src/donor-dashboard/.Trashes
+src/donor-dashboard/Icon?
+src/donor-dashboard/ehthumbs.db
+src/donor-dashboard/Thumbs.db
+
+# Runtime data
+src/donor-dashboard/pids
+src/donor-dashboard/*.pid
+src/donor-dashboard/*.seed
+src/donor-dashboard/*.pid.lock
+
+# Coverage directory used by tools like istanbul
+src/donor-dashboard/coverage/
+src/donor-dashboard/*.lcov
+
+# nyc test coverage
+src/donor-dashboard/.nyc_output
+
+# Dependency directories
+src/donor-dashboard/node_modules/
+src/donor-dashboard/jspm_packages/
+
+# Optional npm cache directory
+src/donor-dashboard/.npm
+
+# Optional eslint cache
+src/donor-dashboard/.eslintcache
+
+# Microbundle cache
+src/donor-dashboard/.rpt2_cache/
+src/donor-dashboard/.rts2_cache_cjs/
+src/donor-dashboard/.rts2_cache_es/
+src/donor-dashboard/.rts2_cache_umd/
+
+# Optional REPL history
+src/donor-dashboard/.node_repl_history
+
+# Output of 'npm pack'
+src/donor-dashboard/*.tgz
+
+# Yarn Integrity file
+src/donor-dashboard/.yarn-integrity
+
+# parcel-bundler cache (https://parceljs.org/)
+src/donor-dashboard/.cache
+src/donor-dashboard/.parcel-cache
+
+# Next.js build output
+src/donor-dashboard/.next
+src/donor-dashboard/out
+
+# Nuxt.js build / generate output
+src/donor-dashboard/.nuxt
+src/donor-dashboard/dist
+
+# Gatsby files
+src/donor-dashboard/.cache/
+src/donor-dashboard/public
+
+# Storybook build outputs
+src/donor-dashboard/.out
+src/donor-dashboard/.storybook-out
+
+# Temporary folders
+src/donor-dashboard/tmp/
+src/donor-dashboard/temp/
+
+# Editor directories and files
+src/donor-dashboard/.vscode/*
+!src/donor-dashboard/.vscode/extensions.json
+src/donor-dashboard/.idea
+src/donor-dashboard/*.suo
+src/donor-dashboard/*.ntvs*
+src/donor-dashboard/*.njsproj
+src/donor-dashboard/*.sln
+src/donor-dashboard/*.sw?
+# END moved from src/donor-dashboard/.gitignore
