@@ -2,11 +2,14 @@
   "name": "donor-dashboard",
   "version": "0.1.0",
   "private": true,
+  "config": {
+    "port": "3000"
+  },
   "scripts": {
     "build": "next build",
-    "dev": "next dev --port 3000",
+    "dev": "node ../../scripts/run-next-with-port.mjs dev",
     "lint": "next lint",
-    "start": "next start --port 3000"
+    "start": "node ../../scripts/run-next-with-port.mjs start"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.888.0",

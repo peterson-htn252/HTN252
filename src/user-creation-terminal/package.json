@@ -2,10 +2,13 @@
   "name": "user-creation-terminal",
   "version": "0.1.0",
   "private": true,
+  "config": {
+    "port": "3004"
+  },
   "scripts": {
-    "dev": "next dev --port 5004",
+    "dev": "node ../../scripts/run-next-with-port.mjs dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node ../../scripts/run-next-with-port.mjs start",
     "lint": "next lint"
   },
   "dependencies": {

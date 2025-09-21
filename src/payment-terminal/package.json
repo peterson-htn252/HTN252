@@ -2,10 +2,13 @@
   "name": "payment-terminal",
   "version": "0.1.0",
   "private": true,
+  "config": {
+    "port": "3003"
+  },
   "scripts": {
-    "dev": "next dev --port 3003",
+    "dev": "node ../../scripts/run-next-with-port.mjs dev",
     "build": "next build",
-    "start": "next start --port 3003",
+    "start": "node ../../scripts/run-next-with-port.mjs start",
     "lint": "next lint"
   },
   "dependencies": {

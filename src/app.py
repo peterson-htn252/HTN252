@@ -13,8 +13,12 @@ Notes:
 Run:
   pip install fastapi uvicorn supabase insightface onnxruntime opencv-python-headless numpy passlib[bcrypt] pyjwt xrpl-py
   export SUPABASE_URL=... SUPABASE_PUBLISHABLE_KEY=... JWT_SECRET=... APP_SECRET=...
-  uvicorn app:app --reload --port 8000
+  PORT=8000 uvicorn app:app --reload
+
+Set the PORT/HOST environment variables to override the defaults when running locally.
 """
+
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,4 +58,7 @@ app.include_router(donor.router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+
+    port = int(os.getenv("PORT", "8000"))
+    host = os.getenv("HOST", "0.0.0.0")
+    uvicorn.run(app, host=host, port=port, reload=True)

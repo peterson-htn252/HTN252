@@ -2,11 +2,14 @@
   "name": "landing-page",
   "version": "0.1.0",
   "private": true,
+  "config": {
+    "port": "3006"
+  },
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
+    "dev": "node ../../scripts/run-next-with-port.mjs dev",
     "lint": "next lint",
-    "start": "next start"
+    "start": "node ../../scripts/run-next-with-port.mjs start"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
