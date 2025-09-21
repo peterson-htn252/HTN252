@@ -2,10 +2,12 @@ import { Button } from "@/components/ui/button"
 import { Card, CardDescription, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Shield, Eye, Zap, Users, ArrowRight, Globe, Heart, Plus, DollarSign } from "lucide-react"
-import Link from "next/link"
+import { Shield, Eye, Zap, Users, ArrowRight, Globe, Heart, DollarSign } from "lucide-react"
 
 export default function DonationPlatform() {
+  const placeholderImage =
+    "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=800&q=80"
+
   const donationPrograms = [
     {
       id: 1,
@@ -16,7 +18,8 @@ export default function DonationPlatform() {
       raised: 45000,
       goal: 75000,
       donors: 234,
-      image: "/clean-water-well-in-rural-village.jpg",
+      image:
+        "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQF2oZ_qiLsMIqgx_h8THNe9dkGFN667bn2Pw&s",
     },
     {
       id: 2,
@@ -27,7 +30,8 @@ export default function DonationPlatform() {
       raised: 28000,
       goal: 40000,
       donors: 156,
-      image: "/children-studying-with-books-and-supplies.jpg",
+      image:
+        "https://theturquoisetable.com/wp-content/uploads/2015/09/SupplyDrive2.jpg",
     },
     {
       id: 3,
@@ -38,7 +42,8 @@ export default function DonationPlatform() {
       raised: 62000,
       goal: 80000,
       donors: 412,
-      image: "/food-relief-packages-being-distributed.jpg",
+      image:
+        "https://www.wfp.org/sites/default/files/images/WFP-emergency-relief.jpg",
     },
   ]
 
@@ -61,8 +66,8 @@ export default function DonationPlatform() {
             <a href="#about" className="text-sm font-medium hover:text-primary transition-colors">
               About
             </a>
-            <Button variant="outline" size="sm">
-              Sign In
+            <Button asChild variant="outline" size="sm">
+              <a href="http://localhost:3000">Sign In</a>
             </Button>
           </nav>
         </div>
@@ -83,13 +88,15 @@ export default function DonationPlatform() {
               from contribution to impact with real-time verification on XRPL.
             </p>
             <div className="mt-10 flex items-center justify-center gap-x-6">
-              <Button size="lg" className="text-lg px-8 py-6">
-                <Link href="http://localhost:3001">
-                Browse Programs
-                </Link>
+              <Button asChild size="lg" className="text-lg px-8 py-6">
+                <a href="http://localhost:3000">
+                  Browse Programs
+                </a>
               </Button>
-              <Button variant="outline" size="lg" className="text-lg px-8 py-6 bg-transparent">
-                Join as NGO
+              <Button asChild variant="outline" size="lg" className="text-lg px-8 py-6 bg-transparent">
+                <a href="http://localhost:3001">
+                  Join as NGO
+                </a>
               </Button>
             </div>
           </div>
@@ -110,7 +117,7 @@ export default function DonationPlatform() {
               <Card key={program.id} className="border-0 shadow-lg hover:shadow-xl transition-shadow overflow-hidden">
                 <div className="aspect-video bg-muted">
                   <img
-                    src={program.image || "/placeholder.svg"}
+                    src={program.image || placeholderImage}
                     alt={program.title}
                     className="w-full h-full object-cover"
                   />
@@ -137,9 +144,11 @@ export default function DonationPlatform() {
                       </div>
                       <Progress value={(program.raised / program.goal) * 100} className="h-2" />
                     </div>
-                    <Button className="w-full">
-                      <DollarSign className="mr-2 h-4 w-4" />
-                      Donate Now
+                    <Button asChild className="w-full">
+                      <a href={`http://localhost:3000?program=${program.id}`}>
+                        <DollarSign className="mr-2 h-4 w-4" />
+                        Donate Now
+                      </a>
                     </Button>
                   </div>
                 </CardContent>
@@ -148,16 +157,19 @@ export default function DonationPlatform() {
           </div>
 
           <div className="text-center mt-12">
-            <Button variant="outline" size="lg">
-              View All Programs
-              <ArrowRight className="ml-2 h-5 w-5" />
+            <Button asChild variant="outline" size="lg">
+              <a href="http://localhost:3000">
+                View All Programs
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </a>
             </Button>
           </div>
         </div>
       </section>
 
       {/* Features Section */}
-      <section id="features" className="py-20">
+      <section id="features" className="py-20 scroll-mt-24">
+        <div id="about" aria-hidden />
         <div className="container mx-auto max-w-7xl px-4">
           <div className="mx-auto max-w-2xl text-center mb-16">
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Built for Trust & Impact</h2>
@@ -308,16 +320,21 @@ export default function DonationPlatform() {
               Join donors and NGOs worldwide in creating a more transparent and efficient donation ecosystem.
             </p>
             <div className="mt-8 flex items-center justify-center gap-x-6">
-              <Button size="lg" variant="secondary" className="text-lg px-8 py-6">
-                Start Donating
-                <ArrowRight className="ml-2 h-5 w-5" />
+              <Button asChild size="lg" variant="secondary" className="text-lg px-8 py-6">
+                <a href="http://localhost:3000">
+                  Start Donating
+                  <ArrowRight className="ml-2 h-5 w-5" />
+                </a>
               </Button>
               <Button
+                asChild
                 size="lg"
                 variant="outline"
                 className="text-lg px-8 py-6 border-primary-foreground text-primary-foreground hover:bg-primary-foreground hover:text-primary bg-transparent"
               >
-                Join as NGO
+                <a href="http://localhost:3001">
+                  Join as NGO
+                </a>
               </Button>
             </div>
           </div>
