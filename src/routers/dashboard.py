@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.auth import get_current_ngo
 from core.database import TBL_RECIPIENTS, TBL_DONATIONS, TBL_EXPENSES
 from core.utils import now_iso
+from core.wallet import get_wallet_balance, resolve_classic_address
 
 router = APIRouter()
 
@@ -23,24 +24,18 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
         
         # Get NGO account details
         from core.database import TBL_ACCOUNTS, TBL_NGO_EXPENSES
-        from core.xrpl import derive_address_from_public_key, fetch_xrp_balance_drops, xrp_drops_to_usd
-        
+
         account = TBL_ACCOUNTS.get_item(Key={"account_id": ngo_id}).get("Item")
         if not account:
             raise HTTPException(status_code=404, detail="NGO account not found")
-        
+
         # Get available funds from wallet balance (primary source of truth)
         available_funds = 0
         try:
-            public_key = account.get("public_key")
-            addr = account.get("address")
-            if not addr and public_key:
-                addr = derive_address_from_public_key(public_key)
-            if addr:
-                drops = fetch_xrp_balance_drops(addr)
-                drops_val = 0 if drops is None else drops
-                usd = xrp_drops_to_usd(drops_val)
-                available_funds = int(round(usd * 100))  # Convert to minor units (cents)
+            addr = account.get("address") or resolve_classic_address(account)
+            balance = get_wallet_balance(addr) if addr else None
+            if balance:
+                available_funds = int(round(balance.balance_usd * 100))
         except Exception:
             available_funds = 0
         

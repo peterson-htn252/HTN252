@@ -9,7 +9,6 @@ from typing import List, Optional, Tuple, Dict, Any
 import jwt
 from fastapi import APIRouter, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect
 
-from routers.financial import wallet_balance_usd
 from supabase import create_client, Client
 
 from models import (
@@ -18,16 +17,17 @@ from models import (
     NGOAccountSummary,
     RecipientCreate,
     BalanceOperation,
-    WalletBalanceUSDRequest,
 )
 from core.auth import hash_password, verify_password, create_access_token, verify_token
 from core.config import JWT_ALGORITHM, JWT_SECRET
 from core.utils import now_iso
-from core.xrpl import (
-    derive_address_from_public_key,
-    fetch_xrp_balance_drops,
-    xrp_drops_to_usd,
-    create_new_wallet,
+from core.xrpl import derive_address_from_public_key, create_new_wallet
+from core.wallet import (
+    balance_from_public_key,
+    ensure_balance,
+    extract_wallet,
+    get_wallet_balance,
+    send_usd,
 )
 
 # -----------------------------------------------------------------------------
@@ -105,28 +105,13 @@ def _get_recipient_by_id(recipient_id: str) -> Dict[str, Any]:
     return rows[0]
 
 
-def _derive_addresses(ngo: Dict[str, Any], rec: Dict[str, Any]) -> Tuple[str, str, str, Optional[str]]:
-    ngo_pub = ngo.get("public_key")
-    ngo_seed = ngo.get("seed")
-    rec_pub = rec.get("public_key")
-    rec_prv = rec.get("private_key")
-
-    if not ngo_pub or not ngo_seed or not rec_pub:
-        raise HTTPException(status_code=500, detail="Wallet keys not properly configured")
-
-    ngo_addr = ngo.get("address") or derive_address_from_public_key(ngo_pub)
-    rec_addr = rec.get("address") or derive_address_from_public_key(rec_pub)
-    if not ngo_addr or not rec_addr:
-        raise HTTPException(status_code=500, detail="Could not derive wallet addresses")
-
-    return ngo_addr, ngo_seed, rec_addr, rec_prv
-
-
 def _wallet_usd(address: str) -> Decimal:
-    drops = fetch_xrp_balance_drops(address)
-    if drops is None:
+    if not address:
         return Decimal("0.00")
-    usd = Decimal(str(xrp_drops_to_usd(drops)))
+    summary = get_wallet_balance(address)
+    if summary is None:
+        return Decimal("0.00")
+    usd = Decimal(str(summary.balance_usd))
     return usd.quantize(Decimal("0.01"), rounding=ROUND_DOWN)
 
 
@@ -519,8 +504,8 @@ def list_recipients(
             res = q.execute()
             rows = res.data or []
             for r in rows:
-                request = WalletBalanceUSDRequest(public_key=r.get("public_key"))
-                r["balance"] = wallet_balance_usd(request)["balance_usd"]
+                balance = balance_from_public_key(r.get("public_key"))
+                r["balance"] = balance.balance_usd if balance else 0.0
 
         return {"recipients": rows, "count": len(rows)}
     except HTTPException:
@@ -595,68 +580,56 @@ def manage_recipient_balance(
         if rec.get("ngo_id") != ngo["account_id"]:
             raise HTTPException(status_code=404, detail="Recipient not found")
 
-        current_balance = _usd(wallet_balance_usd(WalletBalanceUSDRequest(public_key=rec.get("public_key"))).get("balance_usd"), positive=False)
+        balance_info = balance_from_public_key(rec.get("public_key"))
+        current_balance = _usd(
+            (balance_info.balance_usd if balance_info else 0.0),
+            positive=False,
+        )
 
-        from core.xrpl import wallet_to_wallet_send
+        ngo_wallet = extract_wallet(
+            ngo,
+            error_detail="Wallet keys not properly configured",
+            status_code=500,
+        )
+        recipient_wallet = extract_wallet(
+            rec,
+            error_detail="Wallet keys not properly configured",
+            status_code=500,
+        )
 
         if operation == "deposit":
-            ngo_addr, ngo_seed, rec_addr, _ = _derive_addresses(ngo, rec)
-
-            # On-ledger funds check
-            ngo_funds = _wallet_usd(ngo_addr)
-            if ngo_funds < amount_usd:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Insufficient NGO wallet balance. Available: ${ngo_funds:.2f}",
-                )
-
+            ensure_balance(
+                ngo_wallet.address,
+                float(amount_usd),
+                entity="NGO",
+                missing_detail="NGO wallet is not funded or could not fetch balance",
+            )
             memo = body.description or f"Aid distribution to {rec.get('name','recipient')}"
-            try:
-                tx_hash = wallet_to_wallet_send(
-                    sender_seed=ngo_seed,
-                    sender_address=ngo_addr,
-                    destination=rec_addr,
-                    amount_usd=float(amount_usd),
-                    memos=[memo],
-                )
-            except Exception as e:
-                raise HTTPException(status_code=502, detail=f"Wallet transfer failed: {e}")
-
-            if not tx_hash:
-                raise HTTPException(status_code=502, detail="Wallet transfer failed")
-
+            tx_hash = send_usd(
+                ngo_wallet,
+                destination=recipient_wallet.address,
+                amount=float(amount_usd),
+                memo=memo,
+            )
             new_balance = (current_balance + amount_usd).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
 
         else:  # withdraw
             if current_balance < amount_usd:
                 raise HTTPException(status_code=400, detail="Insufficient balance")
 
-            ngo_addr, _, rec_addr, rec_prv = _derive_addresses(ngo, rec)
-            if not rec_prv:
-                raise HTTPException(status_code=500, detail="Recipient private key missing")
-
-            rec_funds = _wallet_usd(rec_addr)
-            if rec_funds < amount_usd:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Insufficient recipient wallet balance. Available: ${rec_funds:.2f}",
-                )
-
+            ensure_balance(
+                recipient_wallet.address,
+                float(amount_usd),
+                entity="recipient",
+                missing_detail="Recipient wallet is not funded or could not fetch balance",
+            )
             memo = body.description or f"Withdrawal from {rec.get('name','recipient')}"
-            try:
-                tx_hash = wallet_to_wallet_send(
-                    sender_seed=rec_prv,
-                    sender_address=rec_addr,
-                    destination=ngo_addr,
-                    amount_usd=float(amount_usd),
-                    memos=[memo],
-                )
-            except Exception as e:
-                raise HTTPException(status_code=502, detail=f"Wallet transfer failed: {e}")
-
-            if not tx_hash:
-                raise HTTPException(status_code=502, detail="Wallet transfer failed")
-
+            tx_hash = send_usd(
+                recipient_wallet,
+                destination=ngo_wallet.address,
+                amount=float(amount_usd),
+                memo=memo,
+            )
             new_balance = (current_balance - amount_usd).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
 
         return {
