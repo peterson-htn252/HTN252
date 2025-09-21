@@ -1,25 +1,30 @@
+const DONOR_DASHBOARD_URL = process.env.NEXT_PUBLIC_DONOR_DASHBOARD_URL ?? "http://localhost:3000"
+const NGO_DASHBOARD_URL = process.env.NEXT_PUBLIC_NGO_DASHBOARD_URL ?? "http://localhost:3001"
+const VENDOR_DASHBOARD_URL = process.env.NEXT_PUBLIC_VENDOR_DASHBOARD_URL ?? "http://localhost:3002"
+const SIGNUP_PORTAL_URL = process.env.NEXT_PUBLIC_SIGNUP_PORTAL_URL ?? "http://localhost:3004"
+
 const dashboards = [
   {
     title: "Donor Dashboard",
-    href: "http://localhost:3000",
-    description: "Track contributions, review program impact, and follow the audit trail in real time.",
+    href: DONOR_DASHBOARD_URL,
+    description: "Track donations and impact.",
     icon: "💧",
   },
   {
     title: "NGO Dashboard",
-    href: "http://localhost:3001",
-    description: "Publish initiatives, manage disbursements, and reconcile grant activity across programs.",
+    href: NGO_DASHBOARD_URL,
+    description: "Manage programs and disbursements.",
     icon: "🌍",
   },
   {
     title: "Vendor Dashboard",
-    href: "http://localhost:3002",
-    description: "Redeem vouchers, manage payouts, and keep tabs on beneficiary purchases.",
+    href: VENDOR_DASHBOARD_URL,
+    description: "Accept payments from recipients.",
     icon: "🏪",
   },
   {
     title: "Sign-up Portal",
-    href: "http://localhost:3004",
+    href: SIGNUP_PORTAL_URL,
     description: "Register donor with a face map.",
     icon: "🚀",
   },
