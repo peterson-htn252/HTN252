@@ -321,8 +321,8 @@ src/process.env
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/.src/NGO-dashboard/node_modules
-/.src/NGO-dashboard/.pnp
+/src/NGO-dashboard/node_modules
+/src/NGO-dashboard/.pnp
 src/NGO-dashboard/.pnp.js
 src/NGO-dashboard/.yarn/install-state.gz
 src/NGO-dashboard/package-lock.json
@@ -330,22 +330,22 @@ src/NGO-dashboard/yarn.lock
 src/NGO-dashboard/pnpm-lock.yaml
 
 # testing
-/.src/NGO-dashboard/coverage
+/src/NGO-dashboard/coverage
 src/NGO-dashboard/*.lcov
 src/NGO-dashboard/.nyc_output
 src/NGO-dashboard/junit.xml
 
 # next.js
-/.src/NGO-dashboard/.next/
-/.src/NGO-dashboard/out/
+/src/NGO-dashboard/.next/
+/src/NGO-dashboard/out/
 src/NGO-dashboard/.next/
 src/NGO-dashboard/out/
 
 # production
-/.src/NGO-dashboard/build
-/.src/NGO-dashboard/dist
-/.src/NGO-dashboard/build/
-/.src/NGO-dashboard/dist/
+/src/NGO-dashboard/build
+/src/NGO-dashboard/dist
+/src/NGO-dashboard/build/
+/src/NGO-dashboard/dist/
 
 # misc
 src/NGO-dashboard/.DS_Store
@@ -483,20 +483,20 @@ src/NGO-dashboard/*.sw?
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/.src/store-dashboard/node_modules
-/.src/store-dashboard/.pnp
+/src/store-dashboard/node_modules
+/src/store-dashboard/.pnp
 src/store-dashboard/.pnp.js
 src/store-dashboard/.yarn/install-state.gz
 
 # testing
-/.src/store-dashboard/coverage
+/src/store-dashboard/coverage
 
 # next.js
-/.src/store-dashboard/.next/
-/.src/store-dashboard/out/
+/src/store-dashboard/.next/
+/src/store-dashboard/out/
 
 # production
-/.src/store-dashboard/build
+/src/store-dashboard/build
 
 # misc
 src/store-dashboard/.DS_Store
@@ -524,20 +524,20 @@ src/store-dashboard/.next
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/.src/payment-terminal/node_modules
-/.src/payment-terminal/.pnp
+/src/payment-terminal/node_modules
+/src/payment-terminal/.pnp
 src/payment-terminal/.pnp.js
 src/payment-terminal/.yarn/install-state.gz
 
 # testing
-/.src/payment-terminal/coverage
+/src/payment-terminal/coverage
 
 # next.js
-/.src/payment-terminal/.next/
-/.src/payment-terminal/out/
+/src/payment-terminal/.next/
+/src/payment-terminal/out/
 
 # production
-/.src/payment-terminal/build
+/src/payment-terminal/build
 
 # misc
 src/payment-terminal/.DS_Store
@@ -563,20 +563,20 @@ src/payment-terminal/next-env.d.ts
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/.src/user-creation-terminal/node_modules
-/.src/user-creation-terminal/.pnp
+/src/user-creation-terminal/node_modules
+/src/user-creation-terminal/.pnp
 src/user-creation-terminal/.pnp.js
 src/user-creation-terminal/.yarn/install-state.gz
 
 # testing
-/.src/user-creation-terminal/coverage
+/src/user-creation-terminal/coverage
 
 # next.js
-/.src/user-creation-terminal/.next/
-/.src/user-creation-terminal/out/
+/src/user-creation-terminal/.next/
+/src/user-creation-terminal/out/
 
 # production
-/.src/user-creation-terminal/build
+/src/user-creation-terminal/build
 
 # misc
 src/user-creation-terminal/.DS_Store
@@ -602,8 +602,8 @@ src/user-creation-terminal/next-env.d.ts
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/.src/donor-dashboard/node_modules
-/.src/donor-dashboard/.pnp
+/src/donor-dashboard/node_modules
+/src/donor-dashboard/.pnp
 src/donor-dashboard/.pnp.js
 src/donor-dashboard/.yarn/install-state.gz
 src/donor-dashboard/package-lock.json
@@ -611,22 +611,22 @@ src/donor-dashboard/yarn.lock
 src/donor-dashboard/pnpm-lock.yaml
 
 # testing
-/.src/donor-dashboard/coverage
+/src/donor-dashboard/coverage
 src/donor-dashboard/*.lcov
 src/donor-dashboard/.nyc_output
 src/donor-dashboard/junit.xml
 
 # next.js
-/.src/donor-dashboard/.next/
-/.src/donor-dashboard/out/
+/src/donor-dashboard/.next/
+/src/donor-dashboard/out/
 src/donor-dashboard/.next/
 src/donor-dashboard/out/
 
 # production
-/.src/donor-dashboard/build
-/.src/donor-dashboard/dist
-/.src/donor-dashboard/build/
-/.src/donor-dashboard/dist/
+/src/donor-dashboard/build
+/src/donor-dashboard/dist
+/src/donor-dashboard/build/
+/src/donor-dashboard/dist/
 
 # misc
 src/donor-dashboard/.DS_Store
