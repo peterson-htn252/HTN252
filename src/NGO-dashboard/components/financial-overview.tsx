@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
 import { DollarSign, TrendingUp, TrendingDown, AlertCircle, Loader2 } from "lucide-react"
 import { apiClient } from "@/lib/api"
 import { DashboardStats } from "@/lib/types"
@@ -13,46 +12,163 @@ export function FinancialOverview() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [availableFundsCents, setAvailableFundsCents] = useState<number | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [wsStatus, setWsStatus] = useState<"connecting" | "open" | "closed">("connecting")
+  const [wsError, setWsError] = useState<string | null>(null)
 
   useEffect(() => {
+    let isMounted = true
+
     const fetchData = async () => {
       try {
         setIsLoading(true)
         setError(null)
 
-        // Fetch dashboard data
         const dashboardStats = await apiClient.getDashboardStats()
-
-        // Try to fetch wallet USD balance using the current account's public key
-        // If we can derive a valid address, override available_funds even if balance is 0
-        let overrideCents: number | null = null
-        try {
-          const me = await apiClient.getCurrentUser()
-          if (me.public_key) {
-            const bal = await apiClient.getWalletBalanceUSD(me.public_key)
-            console.log("bal", bal)
-            if (bal.address) {
-              overrideCents = Math.round(bal.balance_usd * 100)
-            }
-          }
-        } catch (e) {
-          // swallow; fall back to server-computed available_funds
+        if (!isMounted) {
+          return
         }
 
-        // Replace available_funds with wallet USD balance if available
-        const patched = {
-          ...dashboardStats,
-          available_funds: overrideCents !== null ? overrideCents : dashboardStats.available_funds,
-        }
-        setStats(patched)
+        setStats(dashboardStats)
+        setAvailableFundsCents((prev) => (prev ?? dashboardStats.available_funds))
+        setLastUpdated((prev) => prev ?? dashboardStats.last_updated)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load dashboard data')
+        if (!isMounted) {
+          return
+        }
+        setError(err instanceof Error ? err.message : "Failed to load dashboard data")
       } finally {
-        setIsLoading(false)
+        if (isMounted) {
+          setIsLoading(false)
+        }
       }
     }
 
     fetchData()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    let socket: WebSocket | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let isActive = true
+
+    const connect = () => {
+      if (!isActive) {
+        return
+      }
+
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        setWsStatus("closed")
+        setWsError("Missing authentication token for live balance updates")
+        return
+      }
+
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+        const url = new URL("/ws/accounts/dashboard/balance", baseUrl)
+        url.searchParams.set("token", token)
+        url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
+
+        const ws = new WebSocket(url.toString())
+        socket = ws
+        setWsStatus("connecting")
+        setWsError(null)
+
+        ws.onopen = () => {
+          if (!isActive) {
+            return
+          }
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer)
+            reconnectTimer = null
+          }
+          setWsStatus("open")
+          setWsError(null)
+        }
+
+        ws.onmessage = (event) => {
+          if (!isActive) {
+            return
+          }
+          try {
+            const data = JSON.parse(event.data) as {
+              available_funds?: number
+              last_updated?: string
+            }
+
+            if (typeof data.available_funds === "number") {
+              setAvailableFundsCents(data.available_funds)
+            }
+            if (typeof data.last_updated === "string") {
+              setLastUpdated(data.last_updated)
+            }
+          } catch (parseError) {
+            console.error("Failed to parse balance websocket message", parseError)
+          }
+        }
+
+        ws.onerror = () => {
+          if (!isActive) {
+            return
+          }
+          setWsStatus("closed")
+          setWsError("Unable to retrieve live balance updates")
+        }
+
+        ws.onclose = () => {
+          if (!isActive) {
+            return
+          }
+          setWsStatus("closed")
+          socket = null
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer)
+          }
+          reconnectTimer = setTimeout(() => {
+            if (!isActive) {
+              return
+            }
+            setWsStatus("connecting")
+            connect()
+          }, 5000)
+        }
+      } catch (connectionError) {
+        console.error("Failed to connect to balance websocket", connectionError)
+        if (!isActive) {
+          return
+        }
+        setWsStatus("closed")
+        setWsError("Failed to connect to live balance updates")
+      }
+    }
+
+    connect()
+
+    return () => {
+      isActive = false
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+      }
+      if (socket) {
+        socket.onopen = null
+        socket.onmessage = null
+        socket.onerror = null
+        socket.onclose = null
+        if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+          socket.close()
+        }
+      }
+    }
   }, [])
 
   if (isLoading) {
@@ -110,23 +226,60 @@ export function FinancialOverview() {
     return null
   }
 
+  const resolvedAvailableFunds = (availableFundsCents ?? stats.available_funds)
+  const totalAvailable = resolvedAvailableFunds / 100
   // Convert minor units (cents) to dollars for display
-  const totalAvailable = stats.available_funds / 100
   const totalExpenses = stats.total_expenses / 100
   const utilizationRate = stats.utilization_rate
-  
+
   // Fund utilization data (total raised vs goal)
   const lifetimeDonations = stats.lifetime_donations / 100 // Convert from cents to dollars
   const goal = stats.goal // Already in dollars
   const fundUtilizationRate = goal > 0 ? (lifetimeDonations / goal * 100) : 0
 
+  const effectiveLastUpdated = lastUpdated ?? stats.last_updated
+  let formattedLastUpdated: string | null = null
+  if (effectiveLastUpdated) {
+    const parsed = new Date(effectiveLastUpdated)
+    if (!Number.isNaN(parsed.getTime())) {
+      formattedLastUpdated = parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    }
+  }
+
+  const liveStatus = (() => {
+    if (wsStatus === "open") {
+      const label = formattedLastUpdated
+        ? `Live balance updates • Updated ${formattedLastUpdated}`
+        : "Live balance updates"
+      return {
+        text: label,
+        icon: <TrendingUp className="w-4 h-4 text-green-600" />,
+        className: "text-sm text-green-600",
+      }
+    }
+
+    if (wsStatus === "connecting") {
+      return {
+        text: "Connecting to live balance…",
+        icon: <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />,
+        className: "text-sm text-muted-foreground",
+      }
+    }
+
+    return {
+      text: wsError ?? "Live updates unavailable",
+      icon: <AlertCircle className="w-4 h-4 text-red-600" />,
+      className: "text-sm text-red-600",
+    }
+  })()
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold text-foreground">Financial Overview</h2>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <AlertCircle className="w-4 h-4" />
-          <span>Real-time data</span>
+        <div className={`flex items-center gap-2 ${liveStatus.className}`}>
+          {liveStatus.icon}
+          <span>{liveStatus.text}</span>
         </div>
       </div>
 
