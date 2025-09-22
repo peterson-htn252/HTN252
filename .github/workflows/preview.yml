@@ -159,6 +159,7 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
           NEXT_PUBLIC_CF_BEACON_TOKEN: ${{ secrets.CF_WEB_ANALYTICS_TOKEN }}
+          NEXT_PUBLIC_PAYMENT_TERMINAL_URL: https://relief-payment.pages.dev/
         run: |
           corepack enable
           corepack prepare pnpm@9 --activate
