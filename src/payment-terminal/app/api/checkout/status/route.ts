@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+export const runtime = 'edge'
 
 // CORS headers
 const corsHeaders = {
@@ -71,4 +72,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON format" }, { status: 400, headers: corsHeaders })
   }
 }
-
