@@ -33,10 +33,10 @@ const dashboards = [
 export default function Home() {
   return (
     <main>
-      <div className="pill">RippleRelief Toolkit</div>
+      <div className="pill">PulseRelief Toolkit</div>
       <h1>Pick the dashboard that fits your role.</h1>
       <p className="lede">
-        This hub routes you to every experience in the RippleRelief demo environment. Launch the interface that matches
+        This hub routes you to every experience in the PulseRelief demo environment. Launch the interface that matches
         what you want to explore first.
       </p>
       <div className="grid">
