@@ -33,10 +33,11 @@ export function UserCreationDashboard() {
   }
 
   const handleFaceScanComplete = async (faceData: any) => {
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
     const fd = new FormData()
     if (accountId) fd.append("account_id", accountId)
     for (const f of faceData.files) fd.append("files", f)
-    const res = await fetch("http://localhost:8000/face/enroll", {
+    const res = await fetch(`${API_BASE_URL}/face/enroll`, {
       method: "POST",
       body: fd,
     })
@@ -58,13 +59,14 @@ export function UserCreationDashboard() {
   }
 
   const handleReviewComplete = async (updatedData: any) => {
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
     const fd = new FormData()
     if (sessionId) {
       fd.append("session_id", sessionId)
     }
     fd.append("name", `${updatedData.firstName} ${updatedData.lastName}`)
 
-    const res = await fetch("http://localhost:8000/face/promote", {
+    const res = await fetch(`${API_BASE_URL}/face/promote`, {
       method: "POST",
       body: fd,
     })
