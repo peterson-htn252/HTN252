@@ -36,6 +36,10 @@ jobs:
       donor: ${{ steps.filter.outputs.donor }}
       store: ${{ steps.filter.outputs.store }}
       pay:   ${{ steps.filter.outputs.pay }}
+      user:  ${{ steps.filter.outputs.user }}
+      ngo:   ${{ steps.filter.outputs.ngo }}
+      master:   ${{ steps.filter.outputs.master }}
+      landing:   ${{ steps.filter.outputs.landing }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -167,5 +171,97 @@ jobs:
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.PAY_PROJECT }}
           directory:   ${{ env.PAY_DIR }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+
+  pages-user-prod:
+    name: Cloudflare Pages (user-creation) prod
+    needs: detect-changes
+    if: needs.detect-changes.outputs.user == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - working-directory: user-creation-terminal
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy production to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:    ${{ secrets.CF_API_TOKEN }}
+          accountId:   ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ env.USER_PROJECT }}
+          directory:   ${{ env.USER_DIR }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+
+  pages-ngo-prod:
+    name: Cloudflare Pages (NGO-dashboard) prod
+    needs: detect-changes
+    if: needs.detect-changes.outputs.ngo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - working-directory: NGO-dashboard
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy production to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:    ${{ secrets.CF_API_TOKEN }}
+          accountId:   ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ env.NGO_PROJECT }}
+          directory:   ${{ env.NGO_DIR }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+
+  pages-master-prod:
+    name: Cloudflare Pages (master-landing) prod
+    needs: detect-changes
+    if: needs.detect-changes.outputs.master == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - working-directory: master-landing
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy production to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:    ${{ secrets.CF_API_TOKEN }}
+          accountId:   ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ env.MASTER_PROJECT }}
+          directory:   ${{ env.MASTER_DIR }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+
+  pages-landing-prod:
+    name: Cloudflare Pages (landing) prod
+    needs: detect-changes
+    if: needs.detect-changes.outputs.landing == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - working-directory: landing
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy production to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:    ${{ secrets.CF_API_TOKEN }}
+          accountId:   ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ env.LANDING_PROJECT }}
+          directory:   ${{ env.LANDING_DIR }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: main
