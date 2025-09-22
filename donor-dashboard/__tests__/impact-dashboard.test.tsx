@@ -15,13 +15,16 @@ vi.mock("@/lib/api", () => ({
 
 const { fetchNgosMock, transformProgramsMock, calculateImpactMock } = apiMocks
 
-import { ImpactDashboard } from "../components/impact-dashboard"
+type ImpactDashboardComponent = (typeof import("../components/impact-dashboard"))["ImpactDashboard"]
+let ImpactDashboard: ImpactDashboardComponent
 
 describe("ImpactDashboard", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     fetchNgosMock.mockReset()
     transformProgramsMock.mockReset()
     calculateImpactMock.mockReset()
+    vi.resetModules()
+    ;({ ImpactDashboard } = await import("../components/impact-dashboard"))
   })
 
   it("renders impact metrics and programs from the API", async () => {
