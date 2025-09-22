@@ -84,7 +84,6 @@ jobs:
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDP }}
-          service_account: ${{ secrets.GCP_SA_EMAIL }}
       - uses: google-github-actions/setup-gcloud@v2
 
       # Deploy from the api subfolder using Buildpacks, no traffic, PR-tagged
