@@ -3,13 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "workspaces": [
-    "src/landing",
-    "src/donor-dashboard",
-    "src/store-dashboard",
-    "src/NGO-dashboard",
-    "src/payment-terminal",
-    "src/user-creation-terminal",
-    "src/master-landing"
+    "landing",
+    "donor-dashboard",
+    "store-dashboard",
+    "NGO-dashboard",
+    "payment-terminal",
+    "user-creation-terminal",
+    "master-landing"
   ],
   "scripts": {
     "dev:landing": "npm run dev --workspace landing-page",

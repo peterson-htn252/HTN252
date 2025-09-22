@@ -2,7 +2,7 @@ import pytest
 
 from fastapi import HTTPException
 
-from core import wallet
+from src.core import wallet
 
 
 def test_resolve_classic_address_prefers_existing():
