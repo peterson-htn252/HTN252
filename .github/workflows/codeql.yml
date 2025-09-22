@@ -37,8 +37,15 @@ jobs:
       - name: Install frontend dependencies
         if: matrix.language == 'javascript-typescript'
         run: |
-          npm ci --prefix src/donor-dashboard
-          npm ci --prefix src/landing
+          for app in src/donor-dashboard src/landing src/master-landing src/NGO-dashboard src/payment-terminal src/user-creation-terminal src/store-dashboard; do
+            if [ -f "$app/package-lock.json" ]; then
+              echo "Using npm ci in $app"
+              npm ci --prefix "$app"
+            else
+              echo "No lockfile in $app — using npm install"
+              npm install --prefix "$app"
+            fi
+          done
 
       - name: Prepare Python environment
         if: matrix.language == 'python'
