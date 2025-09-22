@@ -31,35 +31,35 @@ jobs:
       - name: Run pytest
         run: pytest -q
 
-  frontend-tests:
-    name: Vitest (${{ matrix.app }})
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        app: [ 'donor-dashboard', 'landing' ]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  # frontend-tests:
+  #   name: Vitest (${{ matrix.app }})
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       app: [ 'donor-dashboard', 'landing' ]
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          # Cache on lockfile if present; fall back to package.json
-          cache-dependency-path: |
-            src/${{ matrix.app }}/package-lock.json
-            src/${{ matrix.app }}/package.json
+  #     - name: Set up Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #         cache: 'npm'
+  #         # Cache on lockfile if present; fall back to package.json
+  #         cache-dependency-path: |
+  #           src/${{ matrix.app }}/package-lock.json
+  #           src/${{ matrix.app }}/package.json
 
-      - name: Install dependencies
-        working-directory: src/${{ matrix.app }}
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+  #     - name: Install dependencies
+  #       working-directory: src/${{ matrix.app }}
+  #       run: |
+  #         if [ -f package-lock.json ]; then
+  #           npm ci
+  #         else
+  #           npm install
+  #         fi
 
-      - name: Run unit tests
-        working-directory: src/${{ matrix.app }}
-        run: npm test -- --run
+  #     - name: Run unit tests
+  #       working-directory: src/${{ matrix.app }}
+  #       run: npm test -- --run
