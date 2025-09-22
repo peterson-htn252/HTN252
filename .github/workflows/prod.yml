@@ -76,6 +76,7 @@ jobs:
       - working-directory: api
         run: |
           python -m pip install -r requirements.txt
+          python -m pip install pytest
           pytest -q
       - uses: google-github-actions/auth@v2
         with:
