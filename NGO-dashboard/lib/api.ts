@@ -52,6 +52,8 @@ class APIClient {
       headers.Authorization = `Bearer ${this.token}`;
     }
 
+    console.log('[APIClient] Request:', options.method || 'GET', url);
+
     const response = await fetch(url, {
       ...options,
       headers,
