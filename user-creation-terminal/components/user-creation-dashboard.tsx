@@ -9,6 +9,7 @@ import { CheckCircle, Camera, User, Shield, FileText } from "lucide-react"
 import { FaceScanStep } from "@/components/face-scan-step"
 import { IdUploadStep } from "@/components/id-upload-step"
 import { ReviewStep } from "@/components/review-step"
+import { API_BASE_URL } from "@/lib/config"
 
 type Step = "welcome" | "face-scan" | "id-upload" | "review" | "complete"
 
@@ -33,7 +34,6 @@ export function UserCreationDashboard() {
   }
 
   const handleFaceScanComplete = async (faceData: any) => {
-    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
     const fd = new FormData()
     if (accountId) fd.append("account_id", accountId)
     for (const f of faceData.files) fd.append("files", f)
@@ -59,7 +59,6 @@ export function UserCreationDashboard() {
   }
 
   const handleReviewComplete = async (updatedData: any) => {
-    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
     const fd = new FormData()
     if (sessionId) {
       fd.append("session_id", sessionId)

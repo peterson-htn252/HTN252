@@ -5,7 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { MapPin, Users, DollarSign, Heart, TrendingUp, Clock, CheckCircle, Loader2 } from "lucide-react"
-import { fetchNGOs, transformNGOsToPrograms, calculateImpactData, type NGO } from "@/lib/api"
+import {
+  API_URL,
+  fetchNGOs,
+  transformNGOsToPrograms,
+  calculateImpactData,
+  type NGO,
+} from "@/lib/api"
 
 interface ImpactData {
   totalDonated: number
@@ -115,7 +121,7 @@ export function ImpactDashboard({ impactData: propImpactData }: ImpactDashboardP
     return (
       <div className="text-center p-8">
         <p className="text-red-500 mb-4">{error}</p>
-        <p className="text-muted-foreground">Please check if the API server is running at {process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"}</p>
+        <p className="text-muted-foreground">Please check if the API server is running at {API_URL}</p>
       </div>
     )
   }

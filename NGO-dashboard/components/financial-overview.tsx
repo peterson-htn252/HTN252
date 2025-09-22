@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DollarSign, TrendingUp, TrendingDown, AlertCircle, Loader2 } from "lucide-react"
 import { apiClient } from "@/lib/api"
+import { API_BASE_URL } from "@/lib/config"
 import { DashboardStats } from "@/lib/types"
 import { formatCurrency } from "@/lib/utils"
 
@@ -74,8 +75,7 @@ export function FinancialOverview() {
       }
 
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-        const url = new URL("/ws/accounts/dashboard/balance", baseUrl)
+        const url = new URL("/ws/accounts/dashboard/balance", API_BASE_URL)
         url.searchParams.set("token", token)
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
 
