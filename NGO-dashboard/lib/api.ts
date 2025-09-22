@@ -52,6 +52,8 @@ class APIClient {
       headers.Authorization = `Bearer ${this.token}`;
     }
 
+    console.log('[APIClient] Request:', options.method || 'GET', url);
+
     const response = await fetch(url, {
       ...options,
       headers,
@@ -64,6 +66,14 @@ class APIClient {
     }
 
     return response.json();
+  }
+
+  private isNotFoundError(error: unknown): boolean {
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+      return message.includes('404') || message.includes('not found');
+    }
+    return false;
   }
 
   // Auth methods
@@ -144,7 +154,16 @@ class APIClient {
 
   // Dashboard methods
   async getDashboardStats(): Promise<DashboardStats> {
-    return this.request<DashboardStats>('/accounts/dashboard/stats');
+    try {
+      return await this.request<DashboardStats>('/accounts/dashboard/stats');
+    } catch (error) {
+      if (!this.isNotFoundError(error)) {
+        throw error;
+      }
+    }
+
+    // Fallback to legacy route exposed by earlier backend builds
+    return this.request<DashboardStats>('/ngo/dashboard/stats');
   }
 
   async getWalletBalanceUSD(publicKey: string): Promise<WalletBalanceUSDResponse> {
@@ -177,6 +196,15 @@ class APIClient {
 
   // Health check
   async healthCheck(): Promise<{ ok: boolean; xrpl: boolean; network: string }> {
+    try {
+      return await this.request<{ ok: boolean; xrpl: boolean; network: string }>('/health');
+    } catch (error) {
+      if (!this.isNotFoundError(error)) {
+        throw error;
+      }
+    }
+
+    // Support older deployments that still expose /healthz
     return this.request<{ ok: boolean; xrpl: boolean; network: string }>('/healthz');
   }
 }
