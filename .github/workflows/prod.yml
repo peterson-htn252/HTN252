@@ -52,6 +52,7 @@ jobs:
               - 'donor-dashboard/**'
             store:
               - 'store-dashboard/**'
+              - '.github/workflows/prod.yml'
             pay:
               - 'payment-terminal/**'
             user:
