@@ -37,7 +37,7 @@ jobs:
       - name: Install frontend dependencies
         if: matrix.language == 'javascript-typescript'
         run: |
-          for app in src/donor-dashboard src/landing src/master-landing src/NGO-dashboard src/payment-terminal src/user-creation-terminal src/store-dashboard; do
+          for app in donor-dashboard landing master-landing NGO-dashboard payment-terminal user-creation-terminal store-dashboard; do
             if [ -f "$app/package-lock.json" ]; then
               echo "Using npm ci in $app"
               npm ci --prefix "$app"
