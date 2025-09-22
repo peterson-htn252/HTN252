@@ -133,7 +133,7 @@ jobs:
       - working-directory: donor-dashboard
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -155,7 +155,7 @@ jobs:
       - working-directory: store-dashboard
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -177,7 +177,7 @@ jobs:
       - working-directory: payment-terminal
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -199,7 +199,7 @@ jobs:
       - working-directory: user-creation-terminal
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -221,7 +221,7 @@ jobs:
       - working-directory: NGO-dashboard
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -243,7 +243,7 @@ jobs:
       - working-directory: master-landing
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -265,7 +265,7 @@ jobs:
       - working-directory: landing
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
