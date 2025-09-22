@@ -11,19 +11,19 @@ permissions:
 env:
   REGION: northamerica-northeast2
   # Cloudflare Pages projects and build output dirs
-  DONOR_PROJECT: donor-dashboard
+  DONOR_PROJECT: relief-donor
   DONOR_DIR: donor-dashboard/.output
-  STORE_PROJECT: store-dashboard
+  STORE_PROJECT: relief-store
   STORE_DIR: store-dashboard/.output
-  PAY_PROJECT: payment-terminal
+  PAY_PROJECT: relief-payment
   PAY_DIR: payment-terminal/.output
-  USER_PROJECT: user-creation-terminal
+  USER_PROJECT: relief-creation
   USER_DIR: user-creation-terminal/.output
-  NGO_PROJECT: NGO-dashboard
+  NGO_PROJECT: relief-ngo
   NGO_DIR: NGO-dashboard/.output
-  MASTER_PROJECT: master-landing
+  MASTER_PROJECT: relief-demo
   MASTER_DIR: master-landing/.output
-  LANDING_PROJECT: landing
+  LANDING_PROJECT: relief-landing
   LANDING_DIR: landing/.output
 
 jobs:
