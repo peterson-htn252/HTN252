@@ -36,7 +36,8 @@ export function UserCreationDashboard() {
     const fd = new FormData()
     if (accountId) fd.append("account_id", accountId)
     for (const f of faceData.files) fd.append("files", f)
-    const res = await fetch("http://localhost:8000/face/enroll", {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+    const res = await fetch(`${baseUrl}/face/enroll`, {
       method: "POST",
       body: fd,
     })
@@ -64,7 +65,8 @@ export function UserCreationDashboard() {
     }
     fd.append("name", `${updatedData.firstName} ${updatedData.lastName}`)
 
-    const res = await fetch("http://localhost:8000/face/promote", {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+    const res = await fetch(`${baseUrl}/face/promote`, {
       method: "POST",
       body: fd,
     })

@@ -129,6 +129,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - working-directory: donor-dashboard
+        env:
+          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
@@ -151,6 +153,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - working-directory: store-dashboard
+        env:
+          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
         run: |
           corepack enable
           corepack prepare pnpm@9 --activate
@@ -175,6 +179,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - working-directory: payment-terminal
+        env:
+          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
@@ -197,6 +203,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - working-directory: user-creation-terminal
+        env:
+          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
@@ -219,6 +227,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - working-directory: NGO-dashboard
+        env:
+          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
@@ -241,6 +251,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - working-directory: master-landing
+        env:
+          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
+          NEXT_PUBLIC_DONOR_DASHBOARD_URL: https://relief-donor.pages.dev
+          NEXT_PUBLIC_NGO_DASHBOARD_URL: https://relief-ngo.pages.dev
+          NEXT_PUBLIC_VENDOR_DASHBOARD_URL: https://relief-store.pages.dev
+          NEXT_PUBLIC_SIGNUP_PORTAL_URL: https://relief-creation.pages.dev
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
@@ -263,6 +279,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - working-directory: landing
+        env:
+          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
+          NEXT_PUBLIC_DONOR_DASHBOARD_URL: https://relief-donor.pages.dev
+          NEXT_PUBLIC_NGO_DASHBOARD_URL: https://relief-ngo.pages.dev
+          NEXT_PUBLIC_NGO_ONBOARDING_URL: https://relief-ngo.pages.dev
+          NEXT_PUBLIC_SIGN_IN_URL: https://relief-donor.pages.dev
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1

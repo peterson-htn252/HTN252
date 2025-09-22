@@ -97,7 +97,8 @@ export function PaymentTerminal() {
       setPaymentError(null)
       try {
         // Get XRPL wallet balance (this is what we use for payment)
-        const walletRes = await fetch("http://localhost:8000/wallets/balance-usd", {
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+        const walletRes = await fetch(`${baseUrl}/wallets/balance-usd`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ public_key: result.publicKey }),
@@ -139,7 +140,8 @@ export function PaymentTerminal() {
 
     try {
       // Call the /redeem endpoint to process the actual payment
-      const redeemRes = await fetch("http://localhost:8000/redeem", {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+      const redeemRes = await fetch(`${baseUrl}/redeem`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
