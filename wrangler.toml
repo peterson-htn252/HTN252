@@ -1,7 +1,4 @@
 name = "htn252"
-compatibility_date = "2024-10-02"
+compatibility_date = "2025-09-22"
+compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
-pages_functions_directory = "functions"
-
-[build]
-command = "npm run build --workspace master-landing"
