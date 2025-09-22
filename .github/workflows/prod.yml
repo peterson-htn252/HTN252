@@ -131,6 +131,7 @@ jobs:
       - working-directory: donor-dashboard
         env:
           NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
+          NEXT_PUBLIC_CF_BEACON_TOKEN: ${{ secrets.CF_WEB_ANALYTICS_TOKEN }}
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
@@ -155,6 +156,7 @@ jobs:
       - working-directory: store-dashboard
         env:
           NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
+          NEXT_PUBLIC_CF_BEACON_TOKEN: ${{ secrets.CF_WEB_ANALYTICS_TOKEN }}
         run: |
           corepack enable
           corepack prepare pnpm@9 --activate
@@ -253,11 +255,13 @@ jobs:
       - working-directory: master-landing
         env:
           NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
-          NEXT_PUBLIC_DONOR_DASHBOARD_URL: https://relief-donor.pages.dev
-          NEXT_PUBLIC_NGO_DASHBOARD_URL: https://relief-ngo.pages.dev
-          NEXT_PUBLIC_VENDOR_DASHBOARD_URL: https://relief-store.pages.dev
-          NEXT_PUBLIC_SIGNUP_PORTAL_URL: https://relief-creation.pages.dev
+          NEXT_PUBLIC_DONOR_DASHBOARD_URL: https://relief-donor.petersonguo.com/
+          NEXT_PUBLIC_NGO_DASHBOARD_URL: https://ngo-dashboard.pages.dev/
+          NEXT_PUBLIC_VENDOR_DASHBOARD_URL: https://relief-store.pages.dev/
+          NEXT_PUBLIC_SIGNUP_PORTAL_URL: https://relief-creation.pages.dev/
+          NEXT_PUBLIC_CF_BEACON_TOKEN: ${{ secrets.CF_WEB_ANALYTICS_TOKEN }}
         run: |
+          rm -rf .vercel/output || true
           npm ci
           npx @cloudflare/next-on-pages@1
       - name: Deploy production to Cloudflare Pages
@@ -281,11 +285,13 @@ jobs:
       - working-directory: landing
         env:
           NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
-          NEXT_PUBLIC_DONOR_DASHBOARD_URL: https://relief-donor.pages.dev
-          NEXT_PUBLIC_NGO_DASHBOARD_URL: https://relief-ngo.pages.dev
-          NEXT_PUBLIC_NGO_ONBOARDING_URL: https://relief-ngo.pages.dev
-          NEXT_PUBLIC_SIGN_IN_URL: https://relief-donor.pages.dev
+          NEXT_PUBLIC_DONOR_DASHBOARD_URL: https://relief-donor.petersonguo.com/
+          NEXT_PUBLIC_NGO_DASHBOARD_URL: https://ngo-dashboard.pages.dev/
+          NEXT_PUBLIC_VENDOR_DASHBOARD_URL: https://relief-store.pages.dev/
+          NEXT_PUBLIC_SIGNUP_PORTAL_URL: https://relief-creation.pages.dev/
+          NEXT_PUBLIC_CF_BEACON_TOKEN: ${{ secrets.CF_WEB_ANALYTICS_TOKEN }}
         run: |
+          rm -rf .vercel/output || true
           npm ci
           npx @cloudflare/next-on-pages@1
       - name: Deploy production to Cloudflare Pages
