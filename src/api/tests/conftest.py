@@ -4,8 +4,8 @@ import types
 from dataclasses import dataclass
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "api"))
 
 # Ensure required environment variables are populated before importing the code under test.
 os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")

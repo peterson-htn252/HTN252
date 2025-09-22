@@ -45,6 +45,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/health")
+def health():
+    return {"ok": True}
+
 app.include_router(face.router)
 app.include_router(accounts.router)
 app.include_router(recipients.router)

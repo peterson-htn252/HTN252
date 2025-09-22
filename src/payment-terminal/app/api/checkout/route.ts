@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+export const runtime = 'edge'
 
 // CORS headers
 const corsHeaders = {
