@@ -115,7 +115,7 @@ export function ImpactDashboard({ impactData: propImpactData }: ImpactDashboardP
     return (
       <div className="text-center p-8">
         <p className="text-red-500 mb-4">{error}</p>
-        <p className="text-muted-foreground">Please check if the API server is reachable at {process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"}</p>
+        <p className="text-muted-foreground">Please check if the API server is running at {process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"}</p>
       </div>
     )
   }

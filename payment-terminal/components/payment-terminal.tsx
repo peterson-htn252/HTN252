@@ -11,6 +11,8 @@ import { CustomerIdleScreen } from "@/components/customer-idle-screen"
 import { WalletDetails } from "@/components/wallet-details"
 import { CreditCard, Shield, Clock } from "lucide-react"
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+
 export interface CheckoutItem {
   id: string
   name: string
@@ -97,8 +99,7 @@ export function PaymentTerminal() {
       setPaymentError(null)
       try {
         // Get XRPL wallet balance (this is what we use for payment)
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-        const walletRes = await fetch(`${baseUrl}/wallets/balance-usd`, {
+        const walletRes = await fetch(`${API_BASE_URL}/wallets/balance-usd`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ public_key: result.publicKey }),
@@ -140,8 +141,7 @@ export function PaymentTerminal() {
 
     try {
       // Call the /redeem endpoint to process the actual payment
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-      const redeemRes = await fetch(`${baseUrl}/redeem`, {
+      const redeemRes = await fetch(`${API_BASE_URL}/redeem`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
