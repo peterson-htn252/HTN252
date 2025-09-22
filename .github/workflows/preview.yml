@@ -154,6 +154,8 @@ jobs:
         with: { node-version: "20" }
       - working-directory: store-dashboard
         run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
           npm ci
           npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
