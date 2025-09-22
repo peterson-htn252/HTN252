@@ -68,7 +68,7 @@ export function DonorDashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className="h-8 w-8 text-primary" />
-              <h1 className="text-2xl font-bold text-foreground">Ripple Relief</h1>
+              <h1 className="text-2xl font-bold text-foreground">PulseRelief</h1>
             </div>
             <Badge variant="secondary" className="text-sm">
               Powered by Ripple XRPL

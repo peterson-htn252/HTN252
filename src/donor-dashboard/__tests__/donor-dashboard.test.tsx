@@ -45,7 +45,7 @@ describe("DonorDashboard", () => {
   it("renders the donor dashboard hero and donation form by default", async () => {
     render(<DonorDashboard />)
 
-    expect(await screen.findByText(/Ripple Relief/i)).toBeInTheDocument()
+    expect(await screen.findByText(/PulseRelief/i)).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: /Track Every Dollar/i })).toBeInTheDocument()
     expect(screen.getByTestId("donation-form")).toBeInTheDocument()
     await waitFor(() => expect(fetchNgosMock).toHaveBeenCalled())

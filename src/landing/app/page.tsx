@@ -70,7 +70,7 @@ export default function DonationPlatform() {
         <div className="container mx-auto max-w-7xl flex h-16 items-center justify-between px-4">
           <div className="flex items-center space-x-2">
             <Heart className="h-8 w-8 text-primary" />
-            <span className="text-xl font-bold">RippleRelief</span>
+            <span className="text-xl font-bold">PulseRelief</span>
           </div>
           <nav className="hidden md:flex items-center space-x-6">
             <a href="#programs" className="text-sm font-medium hover:text-primary transition-colors">
