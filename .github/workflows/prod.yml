@@ -1,7 +1,7 @@
-name: PR Checks and Previews
+name: Production Deploys
 
 on:
-  pull_request:
+  push:
     branches: ["main"]
 
 permissions:
@@ -11,7 +11,6 @@ permissions:
 
 env:
   REGION: northamerica-northeast2
-  # Cloudflare Pages projects and build output dirs
   DONOR_PROJECT: relief-donor
   DONOR_DIR: donor-dashboard/.vercel/output/static
   STORE_PROJECT: relief-store
@@ -40,7 +39,6 @@ jobs:
       ngo:   ${{ steps.filter.outputs.ngo }}
       master:   ${{ steps.filter.outputs.master }}
       landing:   ${{ steps.filter.outputs.landing }}
-
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -57,23 +55,21 @@ jobs:
             pay:
               - 'payment-terminal/**'
             user:
-                - 'user-creation-terminal/**'
+              - 'user-creation-terminal/**'
             ngo:
-                - 'NGO-dashboard/**'
+              - 'NGO-dashboard/**'
             master:
-                - 'master-landing/**'
+              - 'master-landing/**'
             landing:
-                - 'landing/**'
+              - 'landing/**'
 
   cloud-run-api:
-    name: Cloud Run (api)
+    name: Cloud Run (api) prod
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      # Unit tests
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - working-directory: api
@@ -81,14 +77,11 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pytest
           pytest -q
-
-      # Auth to GCP via Workload Identity Federation
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDP }}
       - uses: google-github-actions/setup-gcloud@v2
 
-      # Build the Docker image defined in api/Dockerfile
       - name: Build and push image
         id: build-image
         run: |
@@ -104,25 +97,30 @@ jobs:
           popd >/dev/null
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-      # Deploy the built image tagged for this PR, no traffic by default
       - name: Deploy revision (no traffic)
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: api-backend
           region:  ${{ env.REGION }}
           image:   ${{ steps.build-image.outputs.image }}
-          flags: "--no-traffic --tag=pr-${{ github.event.number }} --allow-unauthenticated"
+          flags: "--no-traffic --tag=staging --allow-unauthenticated"
 
-      # Smoke test the tagged URL
-      - name: Smoke test
+      - name: Smoke test staging
         run: |
           BASE=$(gcloud run services describe api-backend --region $REGION --format='value(status.url)')
-          URL=$(echo "$BASE" | sed "s#https://#https://pr-${{ github.event.number }}---#")
+          URL=$(echo "$BASE" | sed "s#https://#https://staging---#")
           echo "Hitting $URL/health"
           curl -fsSL "$URL/health" | grep -i "ok"
 
-  pages-donor:
-    name: Cloudflare Pages (donor-dashboard)
+      - name: Promote traffic
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: api-backend
+          region:  ${{ env.REGION }}
+          revision_traffic: "LATEST=100"
+
+  pages-donor-prod:
+    name: Cloudflare Pages (donor-dashboard) prod
     needs: detect-changes
     if: needs.detect-changes.outputs.donor == 'true'
     runs-on: ubuntu-latest
@@ -134,17 +132,17 @@ jobs:
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
-      - name: Deploy preview to Cloudflare Pages
+      - name: Deploy production to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.DONOR_PROJECT }}
           directory:   ${{ env.DONOR_DIR }}
-          branch: pr-${{ github.event.number }}
+          branch: main
 
-  pages-store:
-    name: Cloudflare Pages (store-dashboard)
+  pages-store-prod:
+    name: Cloudflare Pages (store-dashboard) prod
     needs: detect-changes
     if: needs.detect-changes.outputs.store == 'true'
     runs-on: ubuntu-latest
@@ -158,17 +156,17 @@ jobs:
           corepack prepare pnpm@9 --activate
           npm ci
           npx @cloudflare/next-on-pages@1
-      - name: Deploy preview to Cloudflare Pages
+      - name: Deploy production to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.STORE_PROJECT }}
           directory:   ${{ env.STORE_DIR }}
-          branch: pr-${{ github.event.number }}
+          branch: main
 
-  pages-pay:
-    name: Cloudflare Pages (payment-terminal])
+  pages-pay-prod:
+    name: Cloudflare Pages (payment-terminal) prod
     needs: detect-changes
     if: needs.detect-changes.outputs.pay == 'true'
     runs-on: ubuntu-latest
@@ -180,19 +178,19 @@ jobs:
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
-      - name: Deploy preview to Cloudflare Pages
+      - name: Deploy production to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.PAY_PROJECT }}
           directory:   ${{ env.PAY_DIR }}
-          branch: pr-${{ github.event.number }}
+          branch: main
 
-  pages-user:
-    name: Cloudflare Pages (user-creation)
+  pages-user-prod:
+    name: Cloudflare Pages (user-creation) prod
     needs: detect-changes
-    if: needs.detect-changes.outputs.pay == 'true'
+    if: needs.detect-changes.outputs.user == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -202,19 +200,19 @@ jobs:
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
-      - name: Deploy preview to Cloudflare Pages
+      - name: Deploy production to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.USER_PROJECT }}
           directory:   ${{ env.USER_DIR }}
-          branch: pr-${{ github.event.number }}
+          branch: main
 
-  pages-ngo:
-    name: Cloudflare Pages (ngo-dashboard)
+  pages-ngo-prod:
+    name: Cloudflare Pages (NGO-dashboard) prod
     needs: detect-changes
-    if: needs.detect-changes.outputs.pay == 'true'
+    if: needs.detect-changes.outputs.ngo == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -224,19 +222,19 @@ jobs:
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
-      - name: Deploy preview to Cloudflare Pages
+      - name: Deploy production to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.NGO_PROJECT }}
           directory:   ${{ env.NGO_DIR }}
-          branch: pr-${{ github.event.number }}
+          branch: main
 
-  pages-master:
-    name: Cloudflare Pages (master-landing)
+  pages-master-prod:
+    name: Cloudflare Pages (master-landing) prod
     needs: detect-changes
-    if: needs.detect-changes.outputs.pay == 'true'
+    if: needs.detect-changes.outputs.master == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -246,19 +244,19 @@ jobs:
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
-      - name: Deploy preview to Cloudflare Pages
+      - name: Deploy production to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.MASTER_PROJECT }}
           directory:   ${{ env.MASTER_DIR }}
-          branch: pr-${{ github.event.number }}
+          branch: main
 
-  pages-landing:
-    name: Cloudflare Pages (landing)
+  pages-landing-prod:
+    name: Cloudflare Pages (landing) prod
     needs: detect-changes
-    if: needs.detect-changes.outputs.pay == 'true'
+    if: needs.detect-changes.outputs.landing == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -268,11 +266,11 @@ jobs:
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
-      - name: Deploy preview to Cloudflare Pages
+      - name: Deploy production to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.LANDING_PROJECT }}
           directory:   ${{ env.LANDING_DIR }}
-          branch: pr-${{ github.event.number }}
+          branch: main
