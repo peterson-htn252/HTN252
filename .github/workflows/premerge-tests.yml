@@ -48,11 +48,11 @@ jobs:
           cache: 'npm'
           # Cache on lockfile if present; fall back to package.json
           cache-dependency-path: |
-            src/${{ matrix.app }}/package-lock.json
-            src/${{ matrix.app }}/package.json
+            ${{ matrix.app }}/package-lock.json
+            ${{ matrix.app }}/package.json
 
       - name: Install dependencies
-        working-directory: src/${{ matrix.app }}
+        working-directory: ${{ matrix.app }}
         run: |
           if [ -f package-lock.json ]; then
             npm ci
@@ -61,5 +61,5 @@ jobs:
           fi
 
       - name: Run unit tests
-        working-directory: src/${{ matrix.app }}
+        working-directory: ${{ matrix.app }}
         run: npm test -- --run
