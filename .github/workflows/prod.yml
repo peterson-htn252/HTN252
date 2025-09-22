@@ -25,6 +25,12 @@ env:
   MASTER_DIR: master-landing/.vercel/output/static
   LANDING_PROJECT: relief-landing
   LANDING_DIR: landing/.vercel/output/static
+  NGO_DASHBOARD_URL: https://relief-ngo.petersonguo.com/
+  VENDOR_DASHBOARD_URL: https://relief-store.petersonguo.com/
+  SIGNUP_PORTAL_URL: https://relief-creation.petersonguo.com/
+  NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
+  PAY_PROJECT_URL: https://relief-payment.petersonguo.com/
+  DONOR_DASHBOARD_URL: https://relief-donor.petersonguo.com/
 
 jobs:
   detect-changes:
@@ -131,7 +137,7 @@ jobs:
         with: { node-version: "20" }
       - working-directory: donor-dashboard
         env:
-          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
+          NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
           NEXT_PUBLIC_CF_BEACON_TOKEN: ${{ secrets.CF_WEB_ANALYTICS_TOKEN }}
         run: |
           npm ci
@@ -156,9 +162,9 @@ jobs:
         with: { node-version: "20" }
       - working-directory: store-dashboard
         env:
-          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
+          NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
           NEXT_PUBLIC_CF_BEACON_TOKEN: ${{ secrets.CF_WEB_ANALYTICS_TOKEN }}
-          NEXT_PUBLIC_PAYMENT_TERMINAL_URL: https://relief-payment.pages.dev/
+          NEXT_PUBLIC_PAYMENT_TERMINAL_URL: ${{ env.PAY_PROJECT_URL }}
         run: |
           corepack enable
           corepack prepare pnpm@9 --activate
@@ -184,7 +190,7 @@ jobs:
         with: { node-version: "20" }
       - working-directory: payment-terminal
         env:
-          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
+          NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
@@ -208,7 +214,7 @@ jobs:
         with: { node-version: "20" }
       - working-directory: user-creation-terminal
         env:
-          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
+          NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
@@ -232,7 +238,7 @@ jobs:
         with: { node-version: "20" }
       - working-directory: NGO-dashboard
         env:
-          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
+          NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
         run: |
           npm ci
           npx @cloudflare/next-on-pages@1
@@ -256,11 +262,11 @@ jobs:
         with: { node-version: "20" }
       - working-directory: master-landing
         env:
-          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
-          NEXT_PUBLIC_DONOR_DASHBOARD_URL: https://relief-donor.petersonguo.com/
-          NEXT_PUBLIC_NGO_DASHBOARD_URL: https://ngo-dashboard.pages.dev/
-          NEXT_PUBLIC_VENDOR_DASHBOARD_URL: https://relief-store.pages.dev/
-          NEXT_PUBLIC_SIGNUP_PORTAL_URL: https://relief-creation.pages.dev/
+          NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_DONOR_DASHBOARD_URL: ${{ env.DONOR_DASHBOARD_URL }}
+          NEXT_PUBLIC_NGO_DASHBOARD_URL: ${{ env.NGO_DASHBOARD_URL }}
+          NEXT_PUBLIC_VENDOR_DASHBOARD_URL: ${{ env.VENDOR_DASHBOARD_URL }}
+          NEXT_PUBLIC_SIGNUP_PORTAL_URL: ${{ env.SIGNUP_PORTAL_URL }}
           NEXT_PUBLIC_CF_BEACON_TOKEN: ${{ secrets.CF_WEB_ANALYTICS_TOKEN }}
         run: |
           rm -rf .vercel/output || true
@@ -286,11 +292,11 @@ jobs:
         with: { node-version: "20" }
       - working-directory: landing
         env:
-          NEXT_PUBLIC_API_URL: https://relief-919616498022.northamerica-northeast2.run.app
-          NEXT_PUBLIC_DONOR_DASHBOARD_URL: https://relief-donor.petersonguo.com/
-          NEXT_PUBLIC_NGO_DASHBOARD_URL: https://ngo-dashboard.pages.dev/
-          NEXT_PUBLIC_VENDOR_DASHBOARD_URL: https://relief-store.pages.dev/
-          NEXT_PUBLIC_SIGNUP_PORTAL_URL: https://relief-creation.pages.dev/
+          NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_DONOR_DASHBOARD_URL: ${{ env.DONOR_DASHBOARD_URL }}
+          NEXT_PUBLIC_NGO_DASHBOARD_URL: ${{ env.NGO_DASHBOARD_URL }}
+          NEXT_PUBLIC_VENDOR_DASHBOARD_URL: ${{ env.VENDOR_DASHBOARD_URL }}
+          NEXT_PUBLIC_SIGNUP_PORTAL_URL: ${{ env.SIGNUP_PORTAL_URL }}
           NEXT_PUBLIC_CF_BEACON_TOKEN: ${{ secrets.CF_WEB_ANALYTICS_TOKEN }}
         run: |
           rm -rf .vercel/output || true
