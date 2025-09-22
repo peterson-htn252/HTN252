@@ -1,31 +1,31 @@
-name: Production Deploys
+name: PR Checks and Previews
 
 on:
-  push:
+  pull_request:
     branches: ["main"]
 
 permissions:
   contents: read
+  deployments: write
   id-token: write
 
 env:
   REGION: northamerica-northeast2
-  DONOR_PROJECT: donor-dashboard
-  DONOR_DIR: donor-dashboard/.output
-  STORE_PROJECT: store-dashboard
-  STORE_DIR: store-dashboard/.output
-  PAY_PROJECT: payment-terminal
-  PAY_DIR: payment-terminal/.output
-  USER_PROJECT: user-creation-terminal
-  USER_DIR: user-creation-terminal/.output
-  NGO_PROJECT: NGO-dashboard
-  NGO_DIR: NGO-dashboard/.output
-  MASTER_PROJECT: master-landing
-  MASTER_DIR: master-landing/.output
-  LANDING_PROJECT: landing
-  LANDING_DIR: landing/.output
-  API_PROJECT: api
-  API_DIR: api
+  # Cloudflare Pages projects and build output dirs
+  DONOR_PROJECT: relief-donor
+  DONOR_DIR: donor-dashboard/.vercel/output/static
+  STORE_PROJECT: relief-store
+  STORE_DIR: store-dashboard/.vercel/output/static
+  PAY_PROJECT: relief-payment
+  PAY_DIR: payment-terminal/.vercel/output/static
+  USER_PROJECT: relief-creation
+  USER_DIR: user-creation-terminal/.vercel/output/static
+  NGO_PROJECT: relief-ngo
+  NGO_DIR: NGO-dashboard/.vercel/output/static
+  MASTER_PROJECT: relief-demo
+  MASTER_DIR: master-landing/.vercel/output/static
+  LANDING_PROJECT: relief-landing
+  LANDING_DIR: landing/.vercel/output/static
 
 jobs:
   detect-changes:
@@ -40,6 +40,7 @@ jobs:
       ngo:   ${{ steps.filter.outputs.ngo }}
       master:   ${{ steps.filter.outputs.master }}
       landing:   ${{ steps.filter.outputs.landing }}
+
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -56,21 +57,23 @@ jobs:
             pay:
               - 'payment-terminal/**'
             user:
-              - 'user-creation-terminal/**'
+                - 'user-creation-terminal/**'
             ngo:
-              - 'NGO-dashboard/**'
+                - 'NGO-dashboard/**'
             master:
-              - 'master-landing/**'
+                - 'master-landing/**'
             landing:
-              - 'landing/**'
+                - 'landing/**'
 
   cloud-run-api:
-    name: Cloud Run (api) prod
+    name: Cloud Run (api)
     needs: detect-changes
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Unit tests
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - working-directory: api
@@ -78,11 +81,14 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pytest
           pytest -q
+
+      # Auth to GCP via Workload Identity Federation
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDP }}
       - uses: google-github-actions/setup-gcloud@v2
 
+      # Build the Docker image defined in api/Dockerfile
       - name: Build and push image
         id: build-image
         run: |
@@ -98,30 +104,25 @@ jobs:
           popd >/dev/null
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
+      # Deploy the built image tagged for this PR, no traffic by default
       - name: Deploy revision (no traffic)
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: api-backend
           region:  ${{ env.REGION }}
           image:   ${{ steps.build-image.outputs.image }}
-          flags: "--no-traffic --tag=staging --allow-unauthenticated"
+          flags: "--no-traffic --tag=pr-${{ github.event.number }} --allow-unauthenticated"
 
-      - name: Smoke test staging
+      # Smoke test the tagged URL
+      - name: Smoke test
         run: |
           BASE=$(gcloud run services describe api-backend --region $REGION --format='value(status.url)')
-          URL=$(echo "$BASE" | sed "s#https://#https://staging---#")
+          URL=$(echo "$BASE" | sed "s#https://#https://pr-${{ github.event.number }}---#")
           echo "Hitting $URL/health"
           curl -fsSL "$URL/health" | grep -i "ok"
 
-      - name: Promote traffic
-        uses: google-github-actions/deploy-cloudrun@v2
-        with:
-          service: api-backend
-          region:  ${{ env.REGION }}
-          revision_traffic: "LATEST=100"
-
-  pages-donor-prod:
-    name: Cloudflare Pages (donor-dashboard) prod
+  pages-donor:
+    name: Cloudflare Pages (donor-dashboard)
     needs: detect-changes
     if: needs.detect-changes.outputs.donor == 'true'
     runs-on: ubuntu-latest
@@ -132,19 +133,18 @@ jobs:
       - working-directory: donor-dashboard
         run: |
           npm ci
-          npm run build
-      - name: Deploy production to Cloudflare Pages
+          npx @cloudflare/next-on-pages@1
+      - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.DONOR_PROJECT }}
           directory:   ${{ env.DONOR_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
+          branch: pr-${{ github.event.number }}
 
-  pages-store-prod:
-    name: Cloudflare Pages (store-dashboard) prod
+  pages-store:
+    name: Cloudflare Pages (store-dashboard)
     needs: detect-changes
     if: needs.detect-changes.outputs.store == 'true'
     runs-on: ubuntu-latest
@@ -154,20 +154,21 @@ jobs:
         with: { node-version: "20" }
       - working-directory: store-dashboard
         run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
           npm ci
-          npm run build
-      - name: Deploy production to Cloudflare Pages
+          npx @cloudflare/next-on-pages@1
+      - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.STORE_PROJECT }}
           directory:   ${{ env.STORE_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
+          branch: pr-${{ github.event.number }}
 
-  pages-pay-prod:
-    name: Cloudflare Pages (payment-terminal) prod
+  pages-pay:
+    name: Cloudflare Pages (payment-terminal])
     needs: detect-changes
     if: needs.detect-changes.outputs.pay == 'true'
     runs-on: ubuntu-latest
@@ -178,21 +179,20 @@ jobs:
       - working-directory: payment-terminal
         run: |
           npm ci
-          npm run build
-      - name: Deploy production to Cloudflare Pages
+          npx @cloudflare/next-on-pages@1
+      - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.PAY_PROJECT }}
           directory:   ${{ env.PAY_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
+          branch: pr-${{ github.event.number }}
 
-  pages-user-prod:
-    name: Cloudflare Pages (user-creation) prod
+  pages-user:
+    name: Cloudflare Pages (user-creation)
     needs: detect-changes
-    if: needs.detect-changes.outputs.user == 'true'
+    if: needs.detect-changes.outputs.pay == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -201,21 +201,20 @@ jobs:
       - working-directory: user-creation-terminal
         run: |
           npm ci
-          npm run build
-      - name: Deploy production to Cloudflare Pages
+          npx @cloudflare/next-on-pages@1
+      - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.USER_PROJECT }}
           directory:   ${{ env.USER_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
+          branch: pr-${{ github.event.number }}
 
-  pages-ngo-prod:
-    name: Cloudflare Pages (NGO-dashboard) prod
+  pages-ngo:
+    name: Cloudflare Pages (ngo-dashboard)
     needs: detect-changes
-    if: needs.detect-changes.outputs.ngo == 'true'
+    if: needs.detect-changes.outputs.pay == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -224,21 +223,20 @@ jobs:
       - working-directory: NGO-dashboard
         run: |
           npm ci
-          npm run build
-      - name: Deploy production to Cloudflare Pages
+          npx @cloudflare/next-on-pages@1
+      - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.NGO_PROJECT }}
           directory:   ${{ env.NGO_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
+          branch: pr-${{ github.event.number }}
 
-  pages-master-prod:
-    name: Cloudflare Pages (master-landing) prod
+  pages-master:
+    name: Cloudflare Pages (master-landing)
     needs: detect-changes
-    if: needs.detect-changes.outputs.master == 'true'
+    if: needs.detect-changes.outputs.pay == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -247,21 +245,20 @@ jobs:
       - working-directory: master-landing
         run: |
           npm ci
-          npm run build
-      - name: Deploy production to Cloudflare Pages
+          npx @cloudflare/next-on-pages@1
+      - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.MASTER_PROJECT }}
           directory:   ${{ env.MASTER_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
+          branch: pr-${{ github.event.number }}
 
-  pages-landing-prod:
-    name: Cloudflare Pages (landing) prod
+  pages-landing:
+    name: Cloudflare Pages (landing)
     needs: detect-changes
-    if: needs.detect-changes.outputs.landing == 'true'
+    if: needs.detect-changes.outputs.pay == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -270,13 +267,12 @@ jobs:
       - working-directory: landing
         run: |
           npm ci
-          npm run build
-      - name: Deploy production to Cloudflare Pages
+          npx @cloudflare/next-on-pages@1
+      - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken:    ${{ secrets.CF_API_TOKEN }}
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.LANDING_PROJECT }}
           directory:   ${{ env.LANDING_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
+          branch: pr-${{ github.event.number }}
