@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from core import utils
+from src.core import utils
 
 
 def test_now_iso_is_timezone_aware():

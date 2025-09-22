@@ -2,7 +2,7 @@ from decimal import Decimal, ROUND_DOWN
 
 import pytest
 
-from core import xrpl
+from src.core import xrpl
 
 
 def decode_memo_fields(memo):
