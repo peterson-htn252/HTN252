@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.so
+*.env
+.env*
+.git
+.gitignore
+pytest.ini
+README.md
+tests/

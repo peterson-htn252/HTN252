@@ -87,13 +87,27 @@ jobs:
           service_account: ${{ secrets.GCP_SA_EMAIL }}
       - uses: google-github-actions/setup-gcloud@v2
 
-      # Deploy from the api subfolder using Buildpacks, no traffic, PR-tagged
+      # Build the Docker image defined in api/Dockerfile
+      - name: Build and push image
+        id: build-image
+        run: |
+          set -euo pipefail
+          PROJECT_ID=$(gcloud config get-value core/project)
+          if [[ -z "$PROJECT_ID" ]]; then
+            echo "Failed to determine GCP project" >&2
+            exit 1
+          fi
+          IMAGE="gcr.io/${PROJECT_ID}/api-backend:${{ github.sha }}"
+          gcloud builds submit api --tag "$IMAGE" --quiet
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      # Deploy the built image tagged for this PR, no traffic by default
       - name: Deploy revision (no traffic)
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: api-backend
           region:  ${{ env.REGION }}
-          source:  api
+          image:   ${{ steps.build-image.outputs.image }}
           flags: "--no-traffic --tag=pr-${{ github.event.number }} --allow-unauthenticated"
 
       # Smoke test the tagged URL
