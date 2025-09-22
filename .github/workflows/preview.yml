@@ -6,25 +6,26 @@ on:
 
 permissions:
   contents: read
+  deployments: write
   id-token: write
 
 env:
   REGION: northamerica-northeast2
   # Cloudflare Pages projects and build output dirs
-  DONOR_PROJECT: donor-dashboard
-  DONOR_DIR: donor-dashboard/.output
-  STORE_PROJECT: store-dashboard
-  STORE_DIR: store-dashboard/.output
-  PAY_PROJECT: payment-terminal
-  PAY_DIR: payment-terminal/.output
-  USER_PROJECT: user-creation-terminal
-  USER_DIR: user-creation-terminal/.output
-  NGO_PROJECT: NGO-dashboard
-  NGO_DIR: NGO-dashboard/.output
-  MASTER_PROJECT: master-landing
-  MASTER_DIR: master-landing/.output
-  LANDING_PROJECT: landing
-  LANDING_DIR: landing/.output
+  DONOR_PROJECT: relief-donor
+  DONOR_DIR: donor-dashboard/.vercel/output/static
+  STORE_PROJECT: relief-store
+  STORE_DIR: store-dashboard/.vercel/output/static
+  PAY_PROJECT: relief-payment
+  PAY_DIR: payment-terminal/.vercel/output/static
+  USER_PROJECT: relief-creation
+  USER_DIR: user-creation-terminal/.vercel/output/static
+  NGO_PROJECT: relief-ngo
+  NGO_DIR: NGO-dashboard/.vercel/output/static
+  MASTER_PROJECT: relief-demo
+  MASTER_DIR: master-landing/.vercel/output/static
+  LANDING_PROJECT: relief-landing
+  LANDING_DIR: landing/.vercel/output/static
 
 jobs:
   detect-changes:
@@ -132,7 +133,7 @@ jobs:
       - working-directory: donor-dashboard
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -140,7 +141,6 @@ jobs:
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.DONOR_PROJECT }}
           directory:   ${{ env.DONOR_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: pr-${{ github.event.number }}
 
   pages-store:
@@ -154,8 +154,10 @@ jobs:
         with: { node-version: "20" }
       - working-directory: store-dashboard
         run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -163,7 +165,6 @@ jobs:
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.STORE_PROJECT }}
           directory:   ${{ env.STORE_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: pr-${{ github.event.number }}
 
   pages-pay:
@@ -178,7 +179,7 @@ jobs:
       - working-directory: payment-terminal
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -186,7 +187,6 @@ jobs:
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.PAY_PROJECT }}
           directory:   ${{ env.PAY_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: pr-${{ github.event.number }}
 
   pages-user:
@@ -201,7 +201,7 @@ jobs:
       - working-directory: user-creation-terminal
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -209,7 +209,6 @@ jobs:
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.USER_PROJECT }}
           directory:   ${{ env.USER_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: pr-${{ github.event.number }}
 
   pages-ngo:
@@ -224,7 +223,7 @@ jobs:
       - working-directory: NGO-dashboard
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -232,7 +231,6 @@ jobs:
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.NGO_PROJECT }}
           directory:   ${{ env.NGO_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: pr-${{ github.event.number }}
 
   pages-master:
@@ -247,7 +245,7 @@ jobs:
       - working-directory: master-landing
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -255,7 +253,6 @@ jobs:
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.MASTER_PROJECT }}
           directory:   ${{ env.MASTER_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: pr-${{ github.event.number }}
 
   pages-landing:
@@ -270,7 +267,7 @@ jobs:
       - working-directory: landing
         run: |
           npm ci
-          npm run build
+          npx @cloudflare/next-on-pages@1
       - name: Deploy preview to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -278,5 +275,4 @@ jobs:
           accountId:   ${{ secrets.CF_ACCOUNT_ID }}
           projectName: ${{ env.LANDING_PROJECT }}
           directory:   ${{ env.LANDING_DIR }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: pr-${{ github.event.number }}
