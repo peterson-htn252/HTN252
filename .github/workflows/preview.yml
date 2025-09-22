@@ -1,0 +1,282 @@
+name: PR Checks and Previews
+
+on:
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: northamerica-northeast2
+  # Cloudflare Pages projects and build output dirs
+  DONOR_PROJECT: donor-dashboard
+  DONOR_DIR: donor-dashboard/.output
+  STORE_PROJECT: store-dashboard
+  STORE_DIR: store-dashboard/.output
+  PAY_PROJECT: payment-terminal
+  PAY_DIR: payment-terminal/.output
+  USER_PROJECT: user-creation-terminal
+  USER_DIR: user-creation-terminal/.output
+  NGO_PROJECT: NGO-dashboard
+  NGO_DIR: NGO-dashboard/.output
+  MASTER_PROJECT: master-landing
+  MASTER_DIR: master-landing/.output
+  LANDING_PROJECT: landing
+  LANDING_DIR: landing/.output
+
+jobs:
+  detect-changes:
+    name: Detect changed apps
+    runs-on: ubuntu-latest
+    outputs:
+      api:   ${{ steps.filter.outputs.api }}
+      donor: ${{ steps.filter.outputs.donor }}
+      store: ${{ steps.filter.outputs.store }}
+      pay:   ${{ steps.filter.outputs.pay }}
+      user:  ${{ steps.filter.outputs.user }}
+      ngo:   ${{ steps.filter.outputs.ngo }}
+      master:   ${{ steps.filter.outputs.master }}
+      landing:   ${{ steps.filter.outputs.landing }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            api:
+              - 'api/**'
+            donor:
+              - 'donor-dashboard/**'
+            store:
+              - 'store-dashboard/**'
+            pay:
+              - 'payment-terminal/**'
+            user:
+                - 'user-creation-terminal/**'
+            ngo:
+                - 'NGO-dashboard/**'
+            master:
+                - 'master-landing/**'
+            landing:
+                - 'landing/**'
+
+  cloud-run-api:
+    name: Cloud Run (api)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Unit tests
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - working-directory: api
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+          pytest -q
+
+      # Auth to GCP via Workload Identity Federation
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDP }}
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # Build the Docker image defined in api/Dockerfile
+      - name: Build and push image
+        id: build-image
+        run: |
+          set -euo pipefail
+          PROJECT_ID=$(gcloud config get-value core/project)
+          if [[ -z "$PROJECT_ID" ]]; then
+            echo "Failed to determine GCP project" >&2
+            exit 1
+          fi
+          IMAGE="gcr.io/${PROJECT_ID}/api-backend:${{ github.sha }}"
+          pushd api >/dev/null
+          gcloud builds submit . --tag "$IMAGE" --quiet
+          popd >/dev/null
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      # Deploy the built image tagged for this PR, no traffic by default
+      - name: Deploy revision (no traffic)
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: api-backend
+          region:  ${{ env.REGION }}
+          image:   ${{ steps.build-image.outputs.image }}
+          flags: "--no-traffic --tag=pr-${{ github.event.number }} --allow-unauthenticated"
+
+      # Smoke test the tagged URL
+      - name: Smoke test
+        run: |
+          BASE=$(gcloud run services describe api-backend --region $REGION --format='value(status.url)')
+          URL=$(echo "$BASE" | sed "s#https://#https://pr-${{ github.event.number }}---#")
+          echo "Hitting $URL/health"
+          curl -fsSL "$URL/health" | grep -i "ok"
+
+  pages-donor:
+    name: Cloudflare Pages (donor-dashboard)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.donor == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - working-directory: donor-dashboard
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy preview to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:    ${{ secrets.CF_API_TOKEN }}
+          accountId:   ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ env.DONOR_PROJECT }}
+          directory:   ${{ env.DONOR_DIR }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: pr-${{ github.event.number }}
+
+  pages-store:
+    name: Cloudflare Pages (store-dashboard)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.store == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - working-directory: store-dashboard
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy preview to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:    ${{ secrets.CF_API_TOKEN }}
+          accountId:   ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ env.STORE_PROJECT }}
+          directory:   ${{ env.STORE_DIR }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: pr-${{ github.event.number }}
+
+  pages-pay:
+    name: Cloudflare Pages (payment-terminal])
+    needs: detect-changes
+    if: needs.detect-changes.outputs.pay == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - working-directory: payment-terminal
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy preview to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:    ${{ secrets.CF_API_TOKEN }}
+          accountId:   ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ env.PAY_PROJECT }}
+          directory:   ${{ env.PAY_DIR }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: pr-${{ github.event.number }}
+
+  pages-user:
+    name: Cloudflare Pages (user-creation)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.pay == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - working-directory: user-creation-terminal
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy preview to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:    ${{ secrets.CF_API_TOKEN }}
+          accountId:   ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ env.USER_PROJECT }}
+          directory:   ${{ env.USER_DIR }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: pr-${{ github.event.number }}
+
+  pages-ngo:
+    name: Cloudflare Pages (ngo-dashboard)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.pay == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - working-directory: NGO-dashboard
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy preview to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:    ${{ secrets.CF_API_TOKEN }}
+          accountId:   ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ env.NGO_PROJECT }}
+          directory:   ${{ env.NGO_DIR }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: pr-${{ github.event.number }}
+
+  pages-master:
+    name: Cloudflare Pages (master-landing)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.pay == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - working-directory: master-landing
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy preview to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:    ${{ secrets.CF_API_TOKEN }}
+          accountId:   ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ env.MASTER_PROJECT }}
+          directory:   ${{ env.MASTER_DIR }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: pr-${{ github.event.number }}
+
+  pages-landing:
+    name: Cloudflare Pages (landing)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.pay == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - working-directory: landing
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy preview to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken:    ${{ secrets.CF_API_TOKEN }}
+          accountId:   ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: ${{ env.LANDING_PROJECT }}
+          directory:   ${{ env.LANDING_DIR }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: pr-${{ github.event.number }}
