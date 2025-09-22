@@ -15,8 +15,8 @@ describe("Landing Donation Platform", () => {
     ).toBeInTheDocument()
 
     expect(screen.getByText(/HTN252 • Powered by Ripple XRPL/i)).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /Browse Programs/i })).toBeInTheDocument()
-    const joinButtons = screen.getAllByRole("button", { name: /Join as NGO/i })
+    expect(screen.getByRole("link", { name: /Browse Programs/i })).toBeInTheDocument()
+    const joinButtons = screen.getAllByRole("link", { name: /Join as NGO/i })
     expect(joinButtons.length).toBeGreaterThan(0)
   })
 
@@ -36,7 +36,7 @@ describe("Landing Donation Platform", () => {
       expect(screen.getByText(title)).toBeInTheDocument()
     })
 
-    const donateButtons = screen.getAllByRole("button", { name: /Donate Now/i })
+    const donateButtons = screen.getAllByRole("link", { name: /Donate Now/i })
     expect(donateButtons).toHaveLength(3)
   })
 
