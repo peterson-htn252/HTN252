@@ -92,6 +92,7 @@
     "jsdom": "^27.0.0",
     "postcss": "^8.5",
     "pathe": "^1.1.2",
+    "rollup": "^4.21.3",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",
     "typescript": "^5",
