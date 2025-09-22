@@ -98,7 +98,9 @@ jobs:
             exit 1
           fi
           IMAGE="gcr.io/${PROJECT_ID}/api-backend:${{ github.sha }}"
-          gcloud builds submit api --tag "$IMAGE" --quiet
+          pushd api >/dev/null
+          gcloud builds submit . --tag "$IMAGE" --quiet
+          popd >/dev/null
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
       # Deploy the built image tagged for this PR, no traffic by default
