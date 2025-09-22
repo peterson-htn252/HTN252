@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Camera, CameraOff, CheckCircle } from "lucide-react"
+import { API_BASE_URL } from "@/lib/config"
 
 export interface VerificationResult {
   success: boolean
@@ -78,8 +79,7 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
     })
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-      const resp = await fetch(`${baseUrl}/face/identify_batch`, {
+      const resp = await fetch(`${API_BASE_URL}/face/identify_batch`, {
         method: "POST",
         body: fd,
       })

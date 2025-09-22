@@ -1,6 +1,6 @@
-import { 
-  AuthToken, 
-  LoginRequest, 
+import {
+  AuthToken,
+  LoginRequest,
   RegisterRequest,
   NGO,
   DashboardStats,
@@ -10,8 +10,7 @@ import {
   WalletBalanceUSDResponse,
   BalanceOperationResponse
 } from './types';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { API_BASE_URL } from './config';
 
 class APIClient {
   private token: string | null = null;

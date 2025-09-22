@@ -1,5 +1,7 @@
 // lib/api.ts
 
+import { API_BASE_URL } from "./config"
+
 export interface NGO {
   account_id: string
   name: string
@@ -11,7 +13,7 @@ export interface NGO {
   address?: string
 }
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000"
+export const API_URL = API_BASE_URL
 
 export async function fetchNGOs(): Promise<NGO[]> {
   try {

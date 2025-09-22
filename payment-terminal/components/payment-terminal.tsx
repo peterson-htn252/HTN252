@@ -10,8 +10,7 @@ import { PaymentAccepted } from "@/components/payment-accepted"
 import { CustomerIdleScreen } from "@/components/customer-idle-screen"
 import { WalletDetails } from "@/components/wallet-details"
 import { CreditCard, Shield, Clock } from "lucide-react"
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+import { API_BASE_URL } from "@/lib/config"
 
 export interface CheckoutItem {
   id: string

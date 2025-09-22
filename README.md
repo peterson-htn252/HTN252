@@ -116,6 +116,14 @@ XRPL_NETWORK=testnet
 SECRET_KEY=dev-secret
 JWT_SECRET=jwt-secret
 
+### Frontend API selection
+
+Each Next.js dashboard reads a shared configuration to decide whether to call the local development API or the hosted production backend.
+
+- Set `NEXT_PUBLIC_API_ENV=prod` to automatically target `https://relief-919616498022.northamerica-northeast2.run.app`.
+- Leave `NEXT_PUBLIC_API_ENV` unset (or set it to `dev`) to use `http://127.0.0.1:8000` for local FastAPI instances.
+- Override the URLs entirely with `NEXT_PUBLIC_PROD_API_URL`, `NEXT_PUBLIC_DEV_API_URL`, or the higher-priority `NEXT_PUBLIC_API_URL` if you need a custom endpoint.
+
 ## Database Schema
 
 - ngos: NGO organizations
