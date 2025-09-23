@@ -36,7 +36,14 @@ from routers import (
     donor,
 )
 
-app = FastAPI(title="XRPL Voucher APIs (Supabase + Face)", version="1.0.0")
+docs_url = "/docs"
+redoc_url = "/redoc"
+
+if os.getenv("APP_ENV") == "prod":
+    docs_url=None
+    redoc_url=None
+
+app = FastAPI(title="XRPL Voucher APIs (Supabase + Face)", version="1.0.0", docs_url=docs_url, redoc_url=redoc_url)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
