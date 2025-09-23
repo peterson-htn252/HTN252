@@ -27,7 +27,7 @@ RUN python -m pip install --upgrade pip \
 
 # Warm up InsightFace model weights so they are baked into the image
 RUN mkdir -p "${INSIGHTFACE_ROOT}" \
-    && python - <<'PY'
+    && python - <<PY
 import os
 from insightface.app import FaceAnalysis
 

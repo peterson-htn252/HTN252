@@ -105,6 +105,7 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
       - name: Deploy revision (no traffic)
+        id: deploy-staging
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: api-backend
@@ -119,12 +120,12 @@ jobs:
           echo "Hitting $URL/health"
           curl -fsSL "$URL/health" | grep -i "ok"
 
-      - name: Promote traffic
+      - name: Promote staging revision
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: api-backend
           region:  ${{ env.REGION }}
-          revision_traffic: "LATEST=100"
+          revision_traffic: "${{ steps.deploy-staging.outputs.revision }}=100"
 
   pages-donor-prod:
     name: Cloudflare Pages (donor-dashboard) prod
