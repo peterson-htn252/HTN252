@@ -3,7 +3,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 import numpy as np
 import uuid, json
 
-from core.face import get_face_app, FACE_AVAILABLE
+from core import face
 from core.auth import get_current_ngo
 from core.database import (
     TBL_FACE_MAPS,
@@ -13,6 +13,9 @@ from core.database import (
 from core.encryption import encrypt_face_embedding, decrypt_face_embedding
 from core.utils import now_iso
 from core.xrpl import derive_address_from_public_key
+
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -46,8 +49,10 @@ def _first_face_normed_embedding(img) -> Tuple[np.ndarray, dict]:
     Tries a few light fallbacks (RGB/CLAHE/scale/rotation) and lowers det_thresh a bit.
     """
     import cv2
-    appf = get_face_app()
-    if appf is None or not FACE_AVAILABLE:
+    appf = face.get_face_app()
+    if appf is None or not face.FACE_AVAILABLE:
+        logger.error("InsightFace not available on server 503 error")
+        print("InsightFace not available on server 503 error")
         raise HTTPException(503, "InsightFace not available on server")
 
     img0 = np.ascontiguousarray(img)
