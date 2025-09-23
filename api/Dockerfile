@@ -27,8 +27,10 @@ RUN python -m pip install --upgrade pip \
 
 # Warm up InsightFace model weights so they are baked into the image
 RUN mkdir -p "${INSIGHTFACE_ROOT}" \
-    && python - <<'PY'
+    && python - <<PY
 import os
+import sys
+import traceback
 from insightface.app import FaceAnalysis
 
 root = os.environ.get("INSIGHTFACE_ROOT", "/opt/insightface")
@@ -47,16 +49,27 @@ def build(name):
         try:
             app = FaceAnalysis(**kw)
             app.prepare(ctx_id=-1, det_size=(640, 640))
-            return
         except Exception as exc:  # pragma: no cover - build time guard
             last_err = exc
             continue
-    raise RuntimeError(f"Failed to pre-download InsightFace model '{name}': {last_err}")
+        else:
+            print(f"Cached InsightFace model '{name}' using options: {kw}")
+            return True
+    sys.stderr.write(
+        "WARNING: Failed to pre-download InsightFace model '{}' after attempts:\n{}\n".format(
+            name,
+            traceback.format_exception_only(type(last_err), last_err)[0].strip() if last_err else "unknown error",
+        )
+    )
+    return False
 
-for model_name in models:
-    build(model_name)
-
-print(f"InsightFace models cached under {root}")
+failures = [model_name for model_name in models if not build(model_name)]
+if failures:
+    sys.stderr.write(
+        "WARNING: Proceeding without cached models: {}\n".format(", ".join(failures))
+    )
+else:
+    print(f"InsightFace models cached under {root}")
 PY
 
 # Copy application source
