@@ -759,3 +759,8 @@ src/donor-dashboard/*.njsproj
 src/donor-dashboard/*.sln
 src/donor-dashboard/*.sw?
 # END moved from src/donor-dashboard/.gitignore
+
+
+# AI Information
+information_for_ai.txt
+schema.txt
