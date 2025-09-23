@@ -8,6 +8,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 vi.mock("@/lib/api", () => ({
+  API_URL: "https://example.com",
   fetchNGOs: apiMocks.fetchNgosMock,
   transformNGOsToPrograms: apiMocks.transformProgramsMock,
   calculateImpactData: apiMocks.calculateImpactMock,

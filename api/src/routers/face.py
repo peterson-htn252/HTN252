@@ -47,8 +47,8 @@ def _first_face_normed_embedding(img) -> Tuple[np.ndarray, dict]:
     """
     import cv2
     appf = get_face_app()
-    # if appf is None or not FACE_AVAILABLE:
-    #     raise HTTPException(503, "InsightFace not available on server")
+    if appf is None or not FACE_AVAILABLE:
+        raise HTTPException(503, "InsightFace not available on server")
 
     img0 = np.ascontiguousarray(img)
 

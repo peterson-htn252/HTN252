@@ -22,6 +22,7 @@
     "dev:all": "concurrently \"npm run dev --workspace landing-page\" \"npm run dev --workspace master-landing\" \"npm run dev --workspace donor-dashboard\" \"npm run dev --workspace store-dashboard\" \"npm run dev --workspace ngo-dashboard\" \"npm run dev --workspace payment-terminal\" \"npm run dev --workspace user-creation-terminal\""
   },
   "devDependencies": {
-    "concurrently": "^9.0.0"
+    "concurrently": "^9.0.0",
+    "vite": "^6.0.11"
   }
 }
