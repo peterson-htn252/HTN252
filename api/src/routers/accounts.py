@@ -509,13 +509,10 @@ def list_recipients(
                 r["balance"] = balance.balance_usd if balance else 0.0
         else:
             res = q.execute()
-            base_rows = res.data or []
-            rows = []
-            for r in base_rows:
-                enriched = dict(r)
-                balance = balance_from_public_key(enriched.get("public_key"))
-                enriched["balance"] = balance.balance_usd if balance else 0.0
-                rows.append(enriched)
+            rows = res.data or []
+            for r in rows:
+                balance = balance_from_public_key(r.get("public_key"))
+                r["balance"] = balance.balance_usd if balance else 0.0
 
         sanitized_rows = [_sanitize_recipient_response(r) for r in rows]
         return {"recipients": sanitized_rows, "count": len(sanitized_rows)}
