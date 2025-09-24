@@ -73,8 +73,8 @@ def verify_vc(jwt_token: VCVerify):
         if not hmac.compare_digest(sig, calc):
             raise HTTPException(401, "Invalid signature")
         payload = json.loads(base64.urlsafe_b64decode(payload_b64 + "=="))
-    except Exception:
-        raise HTTPException(400, "Malformed JWT")
+    except Exception as e:
+        raise HTTPException(400, "Malformed JWT") from e
     jti = payload.get("jti")
     rv = TBL_REVOKE.get_item(Key={"credential_id": jti}).get("Item")
     if rv:

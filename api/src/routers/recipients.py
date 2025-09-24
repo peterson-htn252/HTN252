@@ -63,7 +63,7 @@ def _sanitize_recipient_item(item: dict) -> dict:
 def create_recipient(body: RecipientCreate, current_ngo: dict = Depends(get_current_ngo)):
     recipient_id = str(uuid.uuid4())
     ngo_id = current_ngo["ngo_id"]
-    
+
     # Generate XRPL wallet keys
     try:
         wallet_keys = create_new_wallet()
@@ -173,7 +173,7 @@ def update_recipient(recipient_id: str, body: RecipientUpdate, current_ngo: dict
         )
         return {"status": "updated"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}") from e
 
 
 @router.post("/ngo/recipients/{recipient_id}/balance", tags=["ngo", "recipients"])

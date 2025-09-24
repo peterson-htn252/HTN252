@@ -49,7 +49,7 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
             lifetime_donations = int(lifetime_donations * 100)
         else:
             lifetime_donations = int(lifetime_donations)
-        
+
         goal = account.get("goal", 0)
         if isinstance(goal, str):
             try:

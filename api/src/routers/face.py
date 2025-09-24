@@ -48,7 +48,7 @@ def _first_face_normed_embedding(img) -> Tuple[np.ndarray, dict]:
     Tries a few light fallbacks (RGB/CLAHE/scale/rotation) and lowers det_thresh a bit.
     """
     appf = face.get_face_app()
-    if appf is None or not face.FACE_AVAILABLE:
+    if appf is None or not face.face_available():
         logger.error("InsightFace not available on server 503 error")
         print("InsightFace not available on server 503 error")
         raise HTTPException(503, "InsightFace not available on server")
