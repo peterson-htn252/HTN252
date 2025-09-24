@@ -58,8 +58,8 @@ def _usd(amount: Any, positive: bool = True) -> Decimal:
     """Parse to Decimal USD, round to cents, and validate sign."""
     try:
         d = Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid amount")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid amount") from exc
     if positive and d <= 0:
         raise HTTPException(status_code=400, detail="Amount must be greater than 0")
     return d
@@ -156,7 +156,7 @@ def create_account(body: AccountCreate):
         seed = wallet["seed"]
         address = derive_address_from_public_key(public_key)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {e}") from e
 
     data = {
         "account_id": account_id,
@@ -180,7 +180,7 @@ def create_account(body: AccountCreate):
     try:
         supabase.table(TBL_ACCOUNTS).insert(data).execute()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Account creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Account creation failed: {e}") from e
 
     # If NGO, ensure an expense row exists
     if body.account_type == "NGO":
@@ -218,7 +218,7 @@ def login_account(body: AccountLogin):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/accounts/me", tags=["accounts"])
@@ -264,7 +264,7 @@ def get_current_account(current_user: dict = Depends(verify_token)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/accounts/ngos", tags=["accounts"])
@@ -311,7 +311,7 @@ def get_all_ngo_accounts():
             )
         return ngo_accounts
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve NGO accounts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve NGO accounts: {e}") from e
 
 
 @router.get("/accounts/dashboard/stats", tags=["accounts", "dashboard"])
@@ -394,7 +394,7 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @router.websocket("/ws/accounts/dashboard/balance")
@@ -468,8 +468,6 @@ async def stream_dashboard_balance(websocket: WebSocket, token: str = Query(defa
             await asyncio.sleep(5)
     except WebSocketDisconnect:
         return
-    except asyncio.CancelledError:
-        raise
     except Exception:
         await websocket.close(code=1011, reason="Internal server error")
 
@@ -500,6 +498,9 @@ def list_recipients(
                 if (r.get("name") and search.lower() in r["name"].lower())
                 or (r.get("location") and search.lower() in r["location"].lower())
             ]
+            for r in rows:
+                balance = balance_from_public_key(r.get("public_key"))
+                r["balance"] = balance.balance_usd if balance else 0.0
         else:
             res = q.execute()
             rows = res.data or []
@@ -511,7 +512,7 @@ def list_recipients(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @router.post("/accounts/recipients", tags=["accounts", "recipients"])
@@ -532,7 +533,7 @@ def create_recipient(body: RecipientCreate, current_user: dict = Depends(verify_
             address = derive_address_from_public_key(public_key)
             seed = wallet["seed"]
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {e}") from e
 
         data = {
             "recipient_id": recipient_id,
@@ -551,7 +552,7 @@ def create_recipient(body: RecipientCreate, current_user: dict = Depends(verify_
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @router.post("/accounts/recipients/{recipient_id}/balance", tags=["accounts", "recipients"])
@@ -643,4 +644,4 @@ def manage_recipient_balance(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected server error: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected server error: {e}") from e
