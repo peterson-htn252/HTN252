@@ -1,10 +1,9 @@
 from typing import List, Tuple, Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import numpy as np
 import uuid, json
 
 from core import face
-from core.auth import get_current_ngo
 from core.database import (
     TBL_FACE_MAPS,
     TBL_PENDING_FACE_MAPS,
@@ -14,6 +13,7 @@ from core.encryption import encrypt_face_embedding, decrypt_face_embedding
 from core.utils import now_iso
 from core.xrpl import derive_address_from_public_key
 
+import cv2
 import logging
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,6 @@ def generate_random_string(length):
 # Example usage:
 
 def _img_bytes_to_ndarray(data: bytes):
-    import cv2
     arr = np.frombuffer(data, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)  # BGR
     if img is None:
@@ -48,7 +47,6 @@ def _first_face_normed_embedding(img) -> Tuple[np.ndarray, dict]:
     Find the largest face and return an L2-normalized embedding.
     Tries a few light fallbacks (RGB/CLAHE/scale/rotation) and lowers det_thresh a bit.
     """
-    import cv2
     appf = face.get_face_app()
     if appf is None or not face.FACE_AVAILABLE:
         logger.error("InsightFace not available on server 503 error")
@@ -75,7 +73,6 @@ def _first_face_normed_embedding(img) -> Tuple[np.ndarray, dict]:
     tries = [img0]
     # RGB
     try:
-        import cv2
         tries.append(cv2.cvtColor(img0, cv2.COLOR_BGR2RGB))
     except Exception:
         pass

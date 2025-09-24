@@ -7,16 +7,16 @@ import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle, Camera, User, Shield, FileText } from "lucide-react"
 import { FaceScanStep } from "@/components/face-scan-step"
-import { IdUploadStep } from "@/components/id-upload-step"
+import { PersonaVerificationStep } from "@/components/persona-verification-step"
 import { ReviewStep } from "@/components/review-step"
 import { API_BASE_URL } from "@/lib/config"
 
-type Step = "welcome" | "face-scan" | "id-upload" | "review" | "complete"
+type Step = "welcome" | "face-scan" | "persona" | "review" | "complete"
 
 export function UserCreationDashboard() {
   const [currentStep, setCurrentStep] = useState<Step>("welcome")
   const [faceScanComplete, setFaceScanComplete] = useState(false)
-  const [idUploadComplete, setIdUploadComplete] = useState(false)
+  const [personaComplete, setPersonaComplete] = useState(false)
   const [extractedData, setExtractedData] = useState<any>(null)
   const [accountId, setAccountId] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -24,8 +24,8 @@ export function UserCreationDashboard() {
   const steps = [
     { id: "welcome", title: "Welcome", icon: User },
     { id: "face-scan", title: "Face Scan", icon: Camera },
-    { id: "id-upload", title: "ID Upload", icon: FileText },
-    { id: "review", title: "Review", icon: Shield },
+    { id: "persona", title: "ID Verification", icon: Shield },
+    { id: "review", title: "Review", icon: FileText },
   ]
 
   const getStepProgress = () => {
@@ -49,12 +49,25 @@ export function UserCreationDashboard() {
     setSessionId(data.session_id)
     setAccountId(data.account_id)
     setFaceScanComplete(true)
-    setCurrentStep("id-upload")
+    setCurrentStep("persona")
   }
 
-  const handleIdUploadComplete = async (idData: any) => {
-    setIdUploadComplete(true)
-    setExtractedData(idData)
+  const handlePersonaComplete = (summary: any) => {
+    setPersonaComplete(true)
+    setExtractedData({
+      firstName: "",
+      lastName: "",
+      dateOfBirth: "",
+      idNumber: "",
+      address: "",
+      expirationDate: "",
+      idType: "Government ID",
+      confidence: 0.85,
+      inquiryId: summary.inquiry_id,
+      personaReferenceId: summary.reference_id,
+      personaHostedUrl: summary.url,
+      personaEnvironment: summary.environment,
+    })
     setCurrentStep("review")
   }
 
@@ -97,9 +110,10 @@ export function UserCreationDashboard() {
               const StepIcon = step.icon
               const isActive = step.id === currentStep
               const isComplete =
-                (step.id === "id-upload" && idUploadComplete) ||
+                (step.id === "persona" && personaComplete) ||
                 (step.id === "face-scan" && faceScanComplete) ||
-                (step.id === "welcome" && currentStep !== "welcome")
+                (step.id === "welcome" && currentStep !== "welcome") ||
+                (step.id === "review" && currentStep === "complete")
 
               return (
                 <div key={step.id} className="flex flex-col items-center">
@@ -149,17 +163,17 @@ export function UserCreationDashboard() {
                     </p>
                   </div>
                   <div className="text-center p-4">
-                    <FileText className="w-12 h-12 text-primary mx-auto mb-3" />
-                    <h3 className="font-semibold mb-2">{"ID Upload"}</h3>
+                    <Shield className="w-12 h-12 text-primary mx-auto mb-3" />
+                    <h3 className="font-semibold mb-2">{"Persona Identity Verification"}</h3>
                     <p className="text-sm text-muted-foreground text-pretty">
-                      {"Upload your government ID for automatic data extraction"}
+                      {"Complete document and selfie verification powered by Persona"}
                     </p>
                   </div>
                   <div className="text-center p-4">
-                    <Shield className="w-12 h-12 text-primary mx-auto mb-3" />
+                    <FileText className="w-12 h-12 text-primary mx-auto mb-3" />
                     <h3 className="font-semibold mb-2">{"Secure Review"}</h3>
                     <p className="text-sm text-muted-foreground text-pretty">
-                      {"Review and confirm your automatically extracted information"}
+                      {"Review and confirm the data returned by Persona before activating your account"}
                     </p>
                   </div>
                 </div>
@@ -174,7 +188,9 @@ export function UserCreationDashboard() {
 
           {currentStep === "face-scan" && <FaceScanStep onComplete={handleFaceScanComplete} />}
 
-          {currentStep === "id-upload" && <IdUploadStep onComplete={handleIdUploadComplete} />}
+          {currentStep === "persona" && (
+            <PersonaVerificationStep accountId={accountId} onComplete={handlePersonaComplete} />
+          )}
 
           {currentStep === "review" && <ReviewStep extractedData={extractedData} onComplete={handleReviewComplete} />}
 
@@ -194,7 +210,7 @@ export function UserCreationDashboard() {
                   {"Account Status: Verified"}
                 </Badge>
                 <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>{"✓ Government ID verified and data extracted"}</p>
+                  <p>{"✓ Persona identity verification completed"}</p>
                   <p>{"✓ Face scan completed and processed"}</p>
                   <p>{"✓ Account security measures activated"}</p>
                 </div>

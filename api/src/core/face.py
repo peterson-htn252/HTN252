@@ -2,6 +2,9 @@
 import os, traceback
 from threading import Lock
 
+from insightface.app import FaceAnalysis
+import onnxruntime as ort
+
 FACE_AVAILABLE = False
 _face_app = None
 _face_lock = Lock()
@@ -16,15 +19,12 @@ def get_face_app():
         if _face_app is not None:
             return _face_app
         try:
-            from insightface.app import FaceAnalysis
-
             # Providers (env override → ORT detect → CPU)
             providers_env = os.getenv("INSIGHTFACE_PROVIDERS", "").strip()
             if providers_env:
                 providers = [p.strip() for p in providers_env.split(",") if p.strip()]
             else:
                 try:
-                    import onnxruntime as ort
                     avail = list(ort.get_available_providers() or [])
                 except Exception:
                     avail = []

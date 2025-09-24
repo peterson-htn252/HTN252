@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, User, Calendar, MapPin, CreditCard, Shield } from "lucide-react"
+import { CheckCircle, User, Calendar, MapPin, CreditCard, Shield, ExternalLink } from "lucide-react"
 
 interface ReviewStepProps {
   extractedData: any
@@ -35,6 +35,10 @@ export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
 
   const [isEditing, setIsEditing] = useState(false)
 
+  const personaReferenceId: string | undefined = extractedData.personaReferenceId
+  const personaHostedUrl: string | undefined = extractedData.personaHostedUrl
+  const personaEnvironment: string | undefined = extractedData.personaEnvironment
+
   const dataFields: { icon: any; label: string; name: FieldName; type: "text" | "date" }[] = [
     { icon: User, label: "First Name", name: "firstName", type: "text" },
     { icon: User, label: "Last Name", name: "lastName", type: "text" },
@@ -60,7 +64,14 @@ export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
           <CheckCircle className="w-6 h-6 text-primary" />
           <div className="text-center">
             <p className="font-semibold">{"Verification Complete"}</p>
-            <p className="text-sm text-muted-foreground">{"Face scan and ID processing successful"}</p>
+            <p className="text-sm text-muted-foreground">
+              {"Persona hosted flow confirmed"}
+            </p>
+            {personaReferenceId && (
+              <p className="text-xs text-muted-foreground mt-2 font-mono break-all">
+                {`Reference: ${personaReferenceId}`}
+              </p>
+            )}
           </div>
         </div>
 
@@ -69,11 +80,27 @@ export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
           <Badge variant="secondary" className="text-sm">
             {extractedData.idType}
           </Badge>
+          {personaEnvironment && (
+            <Badge variant="outline" className="text-xs ml-2 uppercase">
+              {personaEnvironment}
+            </Badge>
+          )}
           <p className="text-sm text-muted-foreground mt-1">
             {"Confidence: "}
             {Math.round(extractedData.confidence * 100)}
             {"%"}
           </p>
+          {personaHostedUrl && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-2 gap-2 text-xs"
+              onClick={() => window.open(personaHostedUrl, "_blank", "noopener,noreferrer")}
+            >
+              <ExternalLink className="w-4 h-4" />
+              {"Open Persona receipt"}
+            </Button>
+          )}
         </div>
 
         {/* Extracted Data */}
