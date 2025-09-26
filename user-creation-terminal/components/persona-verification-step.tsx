@@ -37,6 +37,11 @@ interface PersonaInquirySummary {
 
 interface PersonaVerificationStepProps {
   accountId?: string | null
+  initialContext?: {
+    inquiryId: string | null
+    referenceId: string | null
+    environment: string | null
+  } | null
   onComplete: (summary: PersonaInquirySummary & { url: string; environment: string }) => void
 }
 
@@ -45,6 +50,7 @@ type PendingReturn = {
   referenceId?: string
   status?: string
   state?: string
+  environment?: string | null
 }
 
 const STATUS_MESSAGES: Record<string, string> = {
@@ -62,7 +68,7 @@ const STATUS_MESSAGES: Record<string, string> = {
 const FALLBACK_CONFIDENCE = 0.85
 const PERSONA_ENV_FALLBACK = process.env.NEXT_PUBLIC_PERSONA_ENV ?? "sandbox"
 
-export function PersonaVerificationStep({ accountId, onComplete }: PersonaVerificationStepProps) {
+export function PersonaVerificationStep({ accountId, initialContext, onComplete }: PersonaVerificationStepProps) {
   const [hostedLink, setHostedLink] = useState<PersonaHostedLink | null>(null)
   const [flowState, setFlowState] = useState<string | null>(null)
   const [summary, setSummary] = useState<PersonaInquirySummary | null>(null)
@@ -114,6 +120,20 @@ export function PersonaVerificationStep({ accountId, onComplete }: PersonaVerifi
       setPendingReturn({ inquiryId, referenceId, status: retStatus, state: retState })
     }
   }, [])
+
+  useEffect(() => {
+    if (!initialContext) return
+    if (summary) return
+    if (!initialContext.inquiryId && !initialContext.referenceId) return
+    setPendingReturn((existing) =>
+      existing ?? {
+        inquiryId: initialContext.inquiryId ?? undefined,
+        referenceId: initialContext.referenceId ?? undefined,
+        environment: initialContext.environment ?? null,
+      }
+    )
+    setHasLaunched(true)
+  }, [initialContext, summary])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -218,7 +238,9 @@ export function PersonaVerificationStep({ accountId, onComplete }: PersonaVerifi
       }
       const data: PersonaInquirySummary = await res.json()
       const resolvedReference = data.reference_id ?? referenceId ?? hostedLink?.reference_id ?? summary?.reference_id ?? null
-      const resolvedEnvironment = data.environment ?? hostedLink?.environment ?? PERSONA_ENV_FALLBACK
+      const resolvedEnvironment =
+        override?.environment ?? data.environment ?? hostedLink?.environment ?? summary?.environment ?? PERSONA_ENV_FALLBACK
+      const resolvedUrl = hostedLink?.url ?? ""
       const mergedData: PersonaInquirySummary = {
         ...data,
         reference_id: resolvedReference ?? undefined,
@@ -228,7 +250,7 @@ export function PersonaVerificationStep({ accountId, onComplete }: PersonaVerifi
       setStatus(mergedData.status ?? override?.status ?? null)
       onComplete({
         ...mergedData,
-        url: hostedLink?.url ?? "",
+        url: resolvedUrl,
         environment: resolvedEnvironment,
       })
       if (typeof window !== "undefined") {

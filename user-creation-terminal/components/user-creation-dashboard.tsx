@@ -15,6 +15,12 @@ type Step = "welcome" | "face-scan" | "persona" | "review" | "complete"
 
 const STORAGE_KEY = "userCreationTerminalState"
 
+type PersonaResumeContext = {
+  inquiryId: string | null
+  referenceId: string | null
+  environment: string | null
+}
+
 export function UserCreationDashboard() {
   const [currentStep, setCurrentStep] = useState<Step>("welcome")
   const [faceScanComplete, setFaceScanComplete] = useState(false)
@@ -23,6 +29,7 @@ export function UserCreationDashboard() {
   const [accountId, setAccountId] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
+  const [personaResumeContext, setPersonaResumeContext] = useState<PersonaResumeContext | null>(null)
 
   const steps = [
     { id: "welcome", title: "Welcome", icon: User },
@@ -46,23 +53,26 @@ export function UserCreationDashboard() {
         return
       }
       const parsed = JSON.parse(raw)
+      const personaWasComplete = Boolean(parsed.personaComplete)
       if (parsed.currentStep && steps.some((step) => step.id === parsed.currentStep)) {
-        setCurrentStep(parsed.currentStep as Step)
+        setCurrentStep(personaWasComplete && parsed.currentStep === "review" ? "persona" : (parsed.currentStep as Step))
       }
       if (typeof parsed.faceScanComplete === "boolean") {
         setFaceScanComplete(parsed.faceScanComplete)
       }
-      if (typeof parsed.personaComplete === "boolean") {
-        setPersonaComplete(parsed.personaComplete)
-      }
-      if (parsed.extractedData) {
-        setExtractedData(parsed.extractedData)
-      }
+      setPersonaComplete(personaWasComplete && parsed.currentStep === "complete")
       if (parsed.accountId) {
         setAccountId(parsed.accountId)
       }
       if (parsed.sessionId) {
         setSessionId(parsed.sessionId)
+      }
+      if (parsed.personaContext) {
+        setPersonaResumeContext({
+          inquiryId: parsed.personaContext.inquiryId ?? null,
+          referenceId: parsed.personaContext.referenceId ?? null,
+          environment: parsed.personaContext.environment ?? null,
+        })
       }
     } catch (error) {
       console.warn("Failed to restore onboarding state", error)
@@ -76,26 +86,20 @@ export function UserCreationDashboard() {
     if (!hydrated || typeof window === "undefined") {
       return
     }
-    // Remove sensitive fields from extractedData before persisting
-    let safeExtractedData = extractedData
-    if (extractedData && typeof extractedData === "object") {
-      const { dateOfBirth, idNumber, ...rest } = extractedData
-      safeExtractedData = { ...rest }
-    }
     const payload = {
       currentStep,
       faceScanComplete,
       personaComplete,
-      extractedData: safeExtractedData,
       accountId,
       sessionId,
+      personaContext: personaResumeContext,
     }
     try {
       window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
     } catch (error) {
       console.warn("Failed to persist onboarding state", error)
     }
-  }, [hydrated, currentStep, faceScanComplete, personaComplete, extractedData, accountId, sessionId])
+  }, [hydrated, currentStep, faceScanComplete, personaComplete, accountId, sessionId, personaResumeContext])
 
   useEffect(() => {
     if (currentStep === "complete" && typeof window !== "undefined") {
@@ -120,11 +124,18 @@ export function UserCreationDashboard() {
     setAccountId(data.account_id)
     setFaceScanComplete(true)
     setPersonaComplete(false)
+    setExtractedData(null)
+    setPersonaResumeContext(null)
     setCurrentStep("persona")
   }
 
   const handlePersonaComplete = (summary: any) => {
     setPersonaComplete(true)
+    setPersonaResumeContext({
+      inquiryId: summary.inquiry_id ?? null,
+      referenceId: summary.reference_id ?? null,
+      environment: summary.environment ?? null,
+    })
     setExtractedData({
       firstName: summary.first_name ?? "",
       lastName: summary.last_name ?? "",
@@ -264,7 +275,11 @@ export function UserCreationDashboard() {
           {currentStep === "face-scan" && <FaceScanStep onComplete={handleFaceScanComplete} />}
 
           {currentStep === "persona" && (
-            <PersonaVerificationStep accountId={accountId} onComplete={handlePersonaComplete} />
+            <PersonaVerificationStep
+              accountId={accountId}
+              onComplete={handlePersonaComplete}
+              initialContext={personaResumeContext}
+            />
           )}
 
           {currentStep === "review" && <ReviewStep extractedData={extractedData} onComplete={handleReviewComplete} />}
