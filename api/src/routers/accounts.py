@@ -119,6 +119,7 @@ def _sanitize_account_response(acc: Dict[str, Any]) -> Dict[str, Any]:
     acc = dict(acc)
     acc.pop("password_hash", None)
     acc.pop("private_key", None)
+    acc.pop("seed", None)
     # goal normalized to int dollars
     try:
         goal = acc.get("goal", 0)
@@ -135,6 +136,13 @@ def _sanitize_account_response(acc: Dict[str, Any]) -> Dict[str, Any]:
     if "description" not in acc:
         acc["description"] = ""
     return acc
+
+
+def _sanitize_recipient_response(recipient: Dict[str, Any]) -> Dict[str, Any]:
+    sanitized = dict(recipient)
+    sanitized.pop("private_key", None)
+    sanitized.pop("seed", None)
+    return sanitized
 
 
 # -----------------------------------------------------------------------------
@@ -487,16 +495,14 @@ def list_recipients(
 
         q = supabase.table(TBL_RECIPIENTS).select("*").eq("ngo_id", ngo_id)
         if search:
-            like = f"%{search}%"
-            # OR filter: name ilike OR location ilike
-            # supabase python client does not support grouped OR directly; fetch and filter in Python.
             res = q.execute()
             rows = res.data or []
+            search_lower = search.lower()
             rows = [
                 r
                 for r in rows
-                if (r.get("name") and search.lower() in r["name"].lower())
-                or (r.get("location") and search.lower() in r["location"].lower())
+                if (r.get("name") and search_lower in r["name"].lower())
+                or (r.get("location") and search_lower in r["location"].lower())
             ]
             for r in rows:
                 balance = balance_from_public_key(r.get("public_key"))
@@ -508,7 +514,8 @@ def list_recipients(
                 balance = balance_from_public_key(r.get("public_key"))
                 r["balance"] = balance.balance_usd if balance else 0.0
 
-        return {"recipients": rows, "count": len(rows)}
+        sanitized_rows = [_sanitize_recipient_response(r) for r in rows]
+        return {"recipients": sanitized_rows, "count": len(sanitized_rows)}
     except HTTPException:
         raise
     except Exception as e:

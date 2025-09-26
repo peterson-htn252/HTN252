@@ -1,37 +1,111 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle, Camera, User, Shield, FileText } from "lucide-react"
 import { FaceScanStep } from "@/components/face-scan-step"
-import { IdUploadStep } from "@/components/id-upload-step"
+import { PersonaVerificationStep } from "@/components/persona-verification-step"
 import { ReviewStep } from "@/components/review-step"
 import { API_BASE_URL } from "@/lib/config"
 
-type Step = "welcome" | "face-scan" | "id-upload" | "review" | "complete"
+type Step = "welcome" | "face-scan" | "persona" | "review" | "complete"
+
+const STORAGE_KEY = "userCreationTerminalState"
+
+type PersonaResumeContext = {
+  inquiryId: string | null
+  referenceId: string | null
+  environment: string | null
+}
 
 export function UserCreationDashboard() {
   const [currentStep, setCurrentStep] = useState<Step>("welcome")
   const [faceScanComplete, setFaceScanComplete] = useState(false)
-  const [idUploadComplete, setIdUploadComplete] = useState(false)
+  const [personaComplete, setPersonaComplete] = useState(false)
   const [extractedData, setExtractedData] = useState<any>(null)
   const [accountId, setAccountId] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [hydrated, setHydrated] = useState(false)
+  const [personaResumeContext, setPersonaResumeContext] = useState<PersonaResumeContext | null>(null)
 
   const steps = [
     { id: "welcome", title: "Welcome", icon: User },
     { id: "face-scan", title: "Face Scan", icon: Camera },
-    { id: "id-upload", title: "ID Upload", icon: FileText },
-    { id: "review", title: "Review", icon: Shield },
+    { id: "persona", title: "ID Verification", icon: Shield },
+    { id: "review", title: "Review", icon: FileText },
   ]
 
   const getStepProgress = () => {
     const stepIndex = steps.findIndex((step) => step.id === currentStep)
     return ((stepIndex + 1) / steps.length) * 100
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+    try {
+      const raw = window.sessionStorage.getItem(STORAGE_KEY)
+      if (!raw) {
+        return
+      }
+      const parsed = JSON.parse(raw)
+      const personaWasComplete = Boolean(parsed.personaComplete)
+      if (parsed.currentStep && steps.some((step) => step.id === parsed.currentStep)) {
+        setCurrentStep(personaWasComplete && parsed.currentStep === "review" ? "persona" : (parsed.currentStep as Step))
+      }
+      if (typeof parsed.faceScanComplete === "boolean") {
+        setFaceScanComplete(parsed.faceScanComplete)
+      }
+      setPersonaComplete(personaWasComplete && parsed.currentStep === "complete")
+      if (parsed.accountId) {
+        setAccountId(parsed.accountId)
+      }
+      if (parsed.sessionId) {
+        setSessionId(parsed.sessionId)
+      }
+      if (parsed.personaContext) {
+        setPersonaResumeContext({
+          inquiryId: parsed.personaContext.inquiryId ?? null,
+          referenceId: parsed.personaContext.referenceId ?? null,
+          environment: parsed.personaContext.environment ?? null,
+        })
+      }
+    } catch (error) {
+      console.warn("Failed to restore onboarding state", error)
+      window.sessionStorage.removeItem(STORAGE_KEY)
+    } finally {
+      setHydrated(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") {
+      return
+    }
+    const payload = {
+      currentStep,
+      faceScanComplete,
+      personaComplete,
+      accountId,
+      sessionId,
+      personaContext: personaResumeContext,
+    }
+    try {
+      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+    } catch (error) {
+      console.warn("Failed to persist onboarding state", error)
+    }
+  }, [hydrated, currentStep, faceScanComplete, personaComplete, accountId, sessionId, personaResumeContext])
+
+  useEffect(() => {
+    if (currentStep === "complete" && typeof window !== "undefined") {
+      window.sessionStorage.removeItem(STORAGE_KEY)
+    }
+  }, [currentStep])
 
   const handleFaceScanComplete = async (faceData: any) => {
     const fd = new FormData()
@@ -49,12 +123,37 @@ export function UserCreationDashboard() {
     setSessionId(data.session_id)
     setAccountId(data.account_id)
     setFaceScanComplete(true)
-    setCurrentStep("id-upload")
+    setPersonaComplete(false)
+    setExtractedData(null)
+    setPersonaResumeContext(null)
+    setCurrentStep("persona")
   }
 
-  const handleIdUploadComplete = async (idData: any) => {
-    setIdUploadComplete(true)
-    setExtractedData(idData)
+  const handlePersonaComplete = (summary: any) => {
+    setPersonaComplete(true)
+    setPersonaResumeContext({
+      inquiryId: summary.inquiry_id ?? null,
+      referenceId: summary.reference_id ?? null,
+      environment: summary.environment ?? null,
+    })
+    setExtractedData({
+      firstName: summary.first_name ?? "",
+      lastName: summary.last_name ?? "",
+      dateOfBirth: summary.date_of_birth ?? "",
+      idNumber: summary.id_number ?? "",
+      address: summary.address ?? "",
+      expirationDate: summary.expiration_date ?? "",
+      idType: summary.document_type ?? "Government ID",
+      confidence: summary.confidence ?? 0.85,
+      inquiryId: summary.inquiry_id,
+      personaReferenceId: summary.reference_id,
+      personaHostedUrl: summary.url,
+      personaEnvironment: summary.environment,
+      personaStatus: summary.status,
+      personaDecision: summary.decision,
+      personaRiskScore: summary.risk_score,
+      personaFields: summary.fields ?? {},
+    })
     setCurrentStep("review")
   }
 
@@ -97,9 +196,10 @@ export function UserCreationDashboard() {
               const StepIcon = step.icon
               const isActive = step.id === currentStep
               const isComplete =
-                (step.id === "id-upload" && idUploadComplete) ||
+                (step.id === "persona" && personaComplete) ||
                 (step.id === "face-scan" && faceScanComplete) ||
-                (step.id === "welcome" && currentStep !== "welcome")
+                (step.id === "welcome" && currentStep !== "welcome") ||
+                (step.id === "review" && currentStep === "complete")
 
               return (
                 <div key={step.id} className="flex flex-col items-center">
@@ -149,17 +249,17 @@ export function UserCreationDashboard() {
                     </p>
                   </div>
                   <div className="text-center p-4">
-                    <FileText className="w-12 h-12 text-primary mx-auto mb-3" />
-                    <h3 className="font-semibold mb-2">{"ID Upload"}</h3>
+                    <Shield className="w-12 h-12 text-primary mx-auto mb-3" />
+                    <h3 className="font-semibold mb-2">{"Persona Identity Verification"}</h3>
                     <p className="text-sm text-muted-foreground text-pretty">
-                      {"Upload your government ID for automatic data extraction"}
+                      {"Complete document and selfie verification powered by Persona"}
                     </p>
                   </div>
                   <div className="text-center p-4">
-                    <Shield className="w-12 h-12 text-primary mx-auto mb-3" />
+                    <FileText className="w-12 h-12 text-primary mx-auto mb-3" />
                     <h3 className="font-semibold mb-2">{"Secure Review"}</h3>
                     <p className="text-sm text-muted-foreground text-pretty">
-                      {"Review and confirm your automatically extracted information"}
+                      {"Review and confirm the data returned by Persona before activating your account"}
                     </p>
                   </div>
                 </div>
@@ -174,7 +274,13 @@ export function UserCreationDashboard() {
 
           {currentStep === "face-scan" && <FaceScanStep onComplete={handleFaceScanComplete} />}
 
-          {currentStep === "id-upload" && <IdUploadStep onComplete={handleIdUploadComplete} />}
+          {currentStep === "persona" && (
+            <PersonaVerificationStep
+              accountId={accountId}
+              onComplete={handlePersonaComplete}
+              initialContext={personaResumeContext}
+            />
+          )}
 
           {currentStep === "review" && <ReviewStep extractedData={extractedData} onComplete={handleReviewComplete} />}
 
@@ -194,7 +300,7 @@ export function UserCreationDashboard() {
                   {"Account Status: Verified"}
                 </Badge>
                 <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>{"✓ Government ID verified and data extracted"}</p>
+                  <p>{"✓ Persona identity verification completed"}</p>
                   <p>{"✓ Face scan completed and processed"}</p>
                   <p>{"✓ Account security measures activated"}</p>
                 </div>

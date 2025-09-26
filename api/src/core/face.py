@@ -2,29 +2,33 @@
 import os, traceback
 from threading import Lock
 
-FACE_AVAILABLE = False
-_face_app = None
-_face_lock = Lock()
+from insightface.app import FaceAnalysis
+import onnxruntime as ort
+
+class _FaceAppSingleton:
+    FACE_AVAILABLE = False
+    face_app = None
+    face_lock = Lock()
+
+def face_available():
+    """Check if face recognition is available (InsightFace initialized)."""
+    return _FaceAppSingleton.FACE_AVAILABLE
 
 def get_face_app():
     """Lazy, robust InsightFace singleton with provider/model fallbacks."""
-    global _face_app, FACE_AVAILABLE
-    if _face_app is not None:
-        return _face_app
+    if _FaceAppSingleton.face_app is not None:
+        return _FaceAppSingleton.face_app
 
-    with _face_lock:
-        if _face_app is not None:
-            return _face_app
+    with _FaceAppSingleton.face_lock:
+        if _FaceAppSingleton.face_app is not None:
+            return _FaceAppSingleton.face_app
         try:
-            from insightface.app import FaceAnalysis
-
             # Providers (env override → ORT detect → CPU)
             providers_env = os.getenv("INSIGHTFACE_PROVIDERS", "").strip()
             if providers_env:
                 providers = [p.strip() for p in providers_env.split(",") if p.strip()]
             else:
                 try:
-                    import onnxruntime as ort
                     avail = list(ort.get_available_providers() or [])
                 except Exception:
                     avail = []
@@ -58,9 +62,9 @@ def get_face_app():
                         else:
                             fa.prepare(ctx_id=ctx_id, det_size=(det_w, det_h))
                         if getattr(fa, "models", None) and "detection" in fa.models:
-                            _face_app = fa
-                            FACE_AVAILABLE = True
-                            return _face_app
+                            _FaceAppSingleton.face_app = fa
+                            _FaceAppSingleton.FACE_AVAILABLE = True
+                            return _FaceAppSingleton.face_app
                     except TypeError as e:
                         last_err = e
                         continue
@@ -72,13 +76,13 @@ def get_face_app():
                         continue
 
             # All attempts failed
-            FACE_AVAILABLE = False
-            _face_app = None
+            _FaceAppSingleton.FACE_AVAILABLE = False
+            _FaceAppSingleton.face_app = None
             print("[core.face] InsightFace init failed after fallbacks:", repr(last_err))
             return None
 
         except Exception:
-            FACE_AVAILABLE = False
-            _face_app = None
+            _FaceAppSingleton.FACE_AVAILABLE = False
+            _FaceAppSingleton.face_app = None
             print("[core.face] InsightFace init fatal:\n" + traceback.format_exc())
             return None

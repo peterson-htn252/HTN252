@@ -30,7 +30,7 @@ def list_public_ngos():
         ]
         return {"ngos": ngos}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch NGOs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch NGOs: {str(e)}") from e
 
 
 @router.post("/auth/register", tags=["auth"], response_model=Token)
@@ -106,8 +106,8 @@ def login_ngo(body: NGOLogin):
             ngo_id=ngo["ngo_id"],
             organization_name=ngo["organization_name"],
         )
-    except Exception:
-        raise HTTPException(status_code=500, detail="Database error")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Database error") from e
 
 
 @router.get("/auth/me", tags=["auth"])

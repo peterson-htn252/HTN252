@@ -96,7 +96,7 @@ def _normalize_address(candidate: Optional[str]) -> Optional[str]:
     if is_valid_xaddress and xaddress_to_classic_address:  # type: ignore[truthy-func]
         try:
             if is_valid_xaddress(addr):  # type: ignore[operator]
-                classic, _ = xaddress_to_classic_address(addr)
+                classic, _, _t = xaddress_to_classic_address(addr)
                 return classic
         except Exception:
             pass

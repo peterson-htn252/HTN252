@@ -19,7 +19,7 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
             ExpressionAttributeValues={":ngo_id": ngo_id, ":status": "active"},
         )
         active_recipients = len(recipients_resp.get("Items", []))
-        
+
         # Get NGO account details
         account = TBL_ACCOUNTS.get_item(Key={"account_id": ngo_id}).get("Item")
         if not account:
@@ -34,14 +34,14 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
                 available_funds = int(round(balance.balance_usd * 100))
         except Exception:
             available_funds = 0
-        
+
         # Get total NGO expenses from auditor table
         try:
             ngo_expense_resp = TBL_NGO_EXPENSES.get_item(Key={"ngo_id": ngo_id})
             total_expenses = int((ngo_expense_resp.get("Item", {}).get("expenses", 0.0)) * 100)  # Convert to minor units
         except Exception:
             total_expenses = 0
-        
+
         # Get lifetime donations and goal from account
         lifetime_donations = account.get("lifetime_donations", 0)
         # Convert to minor units if needed
@@ -49,7 +49,7 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
             lifetime_donations = int(lifetime_donations * 100)
         else:
             lifetime_donations = int(lifetime_donations)
-        
+
         goal = account.get("goal", 0)
         if isinstance(goal, str):
             try:
@@ -60,10 +60,10 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
             goal = 0
         else:
             goal = int(goal)
-        
+
         # Calculate utilization rate
         utilization_rate = (total_expenses / lifetime_donations * 100) if lifetime_donations > 0 else 0
-        
+
         return {
             "active_recipients": active_recipients,
             "total_expenses": total_expenses,  # From auditor table
@@ -74,4 +74,4 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
             "last_updated": now_iso(),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}") from e

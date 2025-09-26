@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, User, Calendar, MapPin, CreditCard, Shield } from "lucide-react"
+import { CheckCircle, User, Calendar, MapPin, CreditCard, Shield, ExternalLink } from "lucide-react"
 
 interface ReviewStepProps {
   extractedData: any
@@ -35,6 +35,14 @@ export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
 
   const [isEditing, setIsEditing] = useState(false)
 
+  const personaStatus: string | undefined = extractedData.personaStatus
+  const personaDecision: string | undefined = extractedData.personaDecision
+  const personaRiskScore: number | undefined = extractedData.personaRiskScore
+  const personaReferenceId: string | undefined = extractedData.personaReferenceId
+  const personaHostedUrl: string | undefined = extractedData.personaHostedUrl
+  const personaEnvironment: string | undefined = extractedData.personaEnvironment
+  const personaFields: Record<string, unknown> | undefined = extractedData.personaFields
+
   const dataFields: { icon: any; label: string; name: FieldName; type: "text" | "date" }[] = [
     { icon: User, label: "First Name", name: "firstName", type: "text" },
     { icon: User, label: "Last Name", name: "lastName", type: "text" },
@@ -60,7 +68,26 @@ export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
           <CheckCircle className="w-6 h-6 text-primary" />
           <div className="text-center">
             <p className="font-semibold">{"Verification Complete"}</p>
-            <p className="text-sm text-muted-foreground">{"Face scan and ID processing successful"}</p>
+            <p className="text-sm text-muted-foreground">
+              {personaStatus ? `Persona status: ${personaStatus}` : "Persona hosted flow confirmed"}
+            </p>
+            <div className="flex flex-wrap gap-2 justify-center mt-2">
+              {personaDecision && (
+                <Badge variant="outline" className="text-xs uppercase">
+                  {personaDecision}
+                </Badge>
+              )}
+              {typeof personaRiskScore === "number" && (
+                <Badge variant="outline" className="text-xs">
+                  {`Risk ${personaRiskScore.toFixed(2)}`}
+                </Badge>
+              )}
+            </div>
+            {personaReferenceId && (
+              <p className="text-xs text-muted-foreground mt-2 font-mono break-all">
+                {`Reference: ${personaReferenceId}`}
+              </p>
+            )}
           </div>
         </div>
 
@@ -69,11 +96,27 @@ export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
           <Badge variant="secondary" className="text-sm">
             {extractedData.idType}
           </Badge>
+          {personaEnvironment && (
+            <Badge variant="outline" className="text-xs ml-2 uppercase">
+              {personaEnvironment}
+            </Badge>
+          )}
           <p className="text-sm text-muted-foreground mt-1">
             {"Confidence: "}
             {Math.round(extractedData.confidence * 100)}
             {"%"}
           </p>
+          {personaHostedUrl && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-2 gap-2 text-xs"
+              onClick={() => window.open(personaHostedUrl, "_blank", "noopener,noreferrer")}
+            >
+              <ExternalLink className="w-4 h-4" />
+              {"Open Persona receipt"}
+            </Button>
+          )}
         </div>
 
         {/* Extracted Data */}
@@ -125,6 +168,15 @@ export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
           </div>
         </div>
 
+        {/* {personaFields && Object.keys(personaFields).length > 0 && (
+          <div className="bg-muted/30 p-4 rounded-lg">
+            <h4 className="font-semibold mb-2">{"Persona Raw Fields"}</h4>
+            <pre className="bg-background rounded-md p-3 text-xs overflow-x-auto">
+              {JSON.stringify(personaFields, null, 2)}
+            </pre>
+          </div>
+        )} */}
+
         {/* Action Buttons */}
         <div className="flex gap-4 pt-4">
           <Button
@@ -132,7 +184,7 @@ export function ReviewStep({ extractedData, onComplete }: ReviewStepProps) {
             className="flex-1 bg-transparent"
             onClick={() => setIsEditing(!isEditing)}
           >
-            {isEditing ? "Done Editing" : "Edit Information"}
+            {isEditing ? "Done Editing" : "(Sandbox Mode) Edit Information"}
           </Button>
           <Button onClick={() => onComplete(formData)} className="flex-1" size="lg">
             {"Confirm & Create Account"}

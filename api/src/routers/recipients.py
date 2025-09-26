@@ -20,6 +20,7 @@ from core.xrpl import (
     derive_address_from_public_key,
     make_challenge,
     verify_challenge,
+    create_new_wallet
 )
 from core.config import XRPL_NETWORK
 from core.utils import now_iso
@@ -51,13 +52,19 @@ def _load_wallets(ngo_id: str, recipient: dict) -> tuple[WalletDetails, WalletDe
     return ngo_wallet, recipient_wallet
 
 
+def _sanitize_recipient_item(item: dict) -> dict:
+    sanitized = dict(item)
+    sanitized.pop("private_key", None)
+    sanitized.pop("seed", None)
+    return sanitized
+
+
 @router.post("/ngo/recipients", tags=["ngo", "recipients"])
 def create_recipient(body: RecipientCreate, current_ngo: dict = Depends(get_current_ngo)):
     recipient_id = str(uuid.uuid4())
     ngo_id = current_ngo["ngo_id"]
-    
+
     # Generate XRPL wallet keys
-    from core.xrpl import create_new_wallet
     try:
         wallet_keys = create_new_wallet()
         public_key = wallet_keys["public_key"]
@@ -66,8 +73,8 @@ def create_recipient(body: RecipientCreate, current_ngo: dict = Depends(get_curr
         # Derive the address from the public key
         address = derive_address_from_public_key(public_key)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {str(e)}")
-    
+        raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {str(e)}") from e
+
     # Store recipient data according to SQL schema
     recipient_data = {
         "recipient_id": recipient_id,
@@ -81,9 +88,9 @@ def create_recipient(body: RecipientCreate, current_ngo: dict = Depends(get_curr
         "created_at": now_iso(),
         "seed": seed,
     }
-    
+
     TBL_RECIPIENTS.put_item(Item=recipient_data)
-    
+
     return {
         "recipient_id": recipient_id, 
         "status": "created",
@@ -101,7 +108,7 @@ def list_recipients(current_ngo: dict = Depends(get_current_ngo), search: Option
             ExpressionAttributeValues={":ngo_id": ngo_id},
         )
         recipients = recipients_resp.get("Items", [])
-        
+
         # Filter recipients if search term provided
         if search:
             search_lower = search.lower()
@@ -110,14 +117,12 @@ def list_recipients(current_ngo: dict = Depends(get_current_ngo), search: Option
                 if search_lower in r.get("name", "").lower()
                 or search_lower in r.get("location", "").lower()
             ]
-        
-        # Don't include private_key in list responses for security
-        for recipient in recipients:
-            recipient.pop("private_key", None)
-        
-        return {"recipients": recipients, "count": len(recipients)}
+
+        sanitized = [_sanitize_recipient_item(recipient) for recipient in recipients]
+
+        return {"recipients": sanitized, "count": len(sanitized)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}") from e
 
 
 @router.get("/ngo/recipients/{recipient_id}", tags=["ngo", "recipients"])
@@ -127,10 +132,10 @@ def get_recipient(recipient_id: str, current_ngo: dict = Depends(get_current_ngo
         recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
         if not recipient or recipient.get("ngo_id") != ngo_id:
             raise HTTPException(status_code=404, detail="Recipient not found")
-        
-        return recipient
+
+        return _sanitize_recipient_item(recipient)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}") from e
 
 
 @router.put("/ngo/recipients/{recipient_id}", tags=["ngo", "recipients"])
@@ -140,12 +145,12 @@ def update_recipient(recipient_id: str, body: RecipientUpdate, current_ngo: dict
         recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
         if not recipient or recipient.get("ngo_id") != ngo_id:
             raise HTTPException(status_code=404, detail="Recipient not found")
-        
+
         update_expr = "SET "
         expr_values = {}
         expr_names = {}
         updates = []
-        
+
         if body.name is not None:
             updates.append("#name = :name")
             expr_values[":name"] = body.name
@@ -154,12 +159,12 @@ def update_recipient(recipient_id: str, body: RecipientUpdate, current_ngo: dict
             updates.append("#location = :location")
             expr_values[":location"] = body.location
             expr_names["#location"] = "location"
-        
+
         if not updates:
             return {"status": "no updates"}
-        
+
         update_expr += ", ".join(updates)
-        
+
         TBL_RECIPIENTS.update_item(
             Key={"recipient_id": recipient_id},
             UpdateExpression=update_expr,
@@ -168,7 +173,7 @@ def update_recipient(recipient_id: str, body: RecipientUpdate, current_ngo: dict
         )
         return {"status": "updated"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}") from e
 
 
 @router.post("/ngo/recipients/{recipient_id}/balance", tags=["ngo", "recipients"])
@@ -178,7 +183,7 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
         recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
         if not recipient or recipient.get("ngo_id") != ngo_id:
             raise HTTPException(status_code=404, detail="Recipient not found")
-        
+
         current_balance = recipient.get("balance", 0.0)
 
         if body.operation_type == "withdraw" and current_balance < body.amount:
@@ -217,7 +222,7 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
                 memo=memo,
             )
             new_balance = current_balance - body.amount
-        
+
         # Update the balance field in the recipients table
         TBL_RECIPIENTS.update_item(
             Key={"recipient_id": recipient_id},
@@ -236,7 +241,7 @@ def manage_recipient_balance(recipient_id: str, body: BalanceOperation, current_
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}") from e
 
 
 @router.get("/recipients/{recipient_id}/balance", tags=["recipients"])
@@ -250,7 +255,7 @@ def get_recipient_balance(recipient_id: str):
             "balance": recipient.get("balance", 0.0)
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}") from e
 
 
 @router.get("/recipients/{recipient_id}", tags=["recipients"])
@@ -266,7 +271,7 @@ def get_recipient_public(recipient_id: str):
                 "verified": True,
                 "created_at": "2024-01-01T00:00:00Z",
             }
-        
+
         recipient = TBL_RECIPIENTS.get_item(Key={"recipient_id": recipient_id}).get("Item")
         if not recipient:
             raise HTTPException(status_code=404, detail="Recipient not found")
@@ -278,7 +283,7 @@ def get_recipient_public(recipient_id: str):
             "created_at": recipient.get("created_at"),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}") from e
 
 
 @router.post("/recipients/{recipient_id}/wallet-link/start", tags=["recipients"])

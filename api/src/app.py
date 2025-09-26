@@ -34,6 +34,7 @@ from routers import (
     meta,
     llm,
     donor,
+    persona,
 )
 
 docs_url = "/docs"
@@ -66,6 +67,7 @@ app.include_router(dashboard.router)
 app.include_router(meta.router)
 app.include_router(llm.router)
 app.include_router(donor.router)
+app.include_router(persona.router)
 
 if __name__ == "__main__":
     import uvicorn
