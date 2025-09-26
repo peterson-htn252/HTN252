@@ -76,11 +76,17 @@ export function UserCreationDashboard() {
     if (!hydrated || typeof window === "undefined") {
       return
     }
+    // Remove sensitive fields from extractedData before persisting
+    let safeExtractedData = extractedData
+    if (extractedData && typeof extractedData === "object") {
+      const { dateOfBirth, idNumber, ...rest } = extractedData
+      safeExtractedData = { ...rest }
+    }
     const payload = {
       currentStep,
       faceScanComplete,
       personaComplete,
-      extractedData,
+      extractedData: safeExtractedData,
       accountId,
       sessionId,
     }
