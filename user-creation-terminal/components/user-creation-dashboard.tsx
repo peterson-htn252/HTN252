@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -13,6 +13,8 @@ import { API_BASE_URL } from "@/lib/config"
 
 type Step = "welcome" | "face-scan" | "persona" | "review" | "complete"
 
+const STORAGE_KEY = "userCreationTerminalState"
+
 export function UserCreationDashboard() {
   const [currentStep, setCurrentStep] = useState<Step>("welcome")
   const [faceScanComplete, setFaceScanComplete] = useState(false)
@@ -20,6 +22,7 @@ export function UserCreationDashboard() {
   const [extractedData, setExtractedData] = useState<any>(null)
   const [accountId, setAccountId] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [hydrated, setHydrated] = useState(false)
 
   const steps = [
     { id: "welcome", title: "Welcome", icon: User },
@@ -32,6 +35,67 @@ export function UserCreationDashboard() {
     const stepIndex = steps.findIndex((step) => step.id === currentStep)
     return ((stepIndex + 1) / steps.length) * 100
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+    try {
+      const raw = window.sessionStorage.getItem(STORAGE_KEY)
+      if (!raw) {
+        return
+      }
+      const parsed = JSON.parse(raw)
+      if (parsed.currentStep && steps.some((step) => step.id === parsed.currentStep)) {
+        setCurrentStep(parsed.currentStep as Step)
+      }
+      if (typeof parsed.faceScanComplete === "boolean") {
+        setFaceScanComplete(parsed.faceScanComplete)
+      }
+      if (typeof parsed.personaComplete === "boolean") {
+        setPersonaComplete(parsed.personaComplete)
+      }
+      if (parsed.extractedData) {
+        setExtractedData(parsed.extractedData)
+      }
+      if (parsed.accountId) {
+        setAccountId(parsed.accountId)
+      }
+      if (parsed.sessionId) {
+        setSessionId(parsed.sessionId)
+      }
+    } catch (error) {
+      console.warn("Failed to restore onboarding state", error)
+      window.sessionStorage.removeItem(STORAGE_KEY)
+    } finally {
+      setHydrated(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") {
+      return
+    }
+    const payload = {
+      currentStep,
+      faceScanComplete,
+      personaComplete,
+      extractedData,
+      accountId,
+      sessionId,
+    }
+    try {
+      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+    } catch (error) {
+      console.warn("Failed to persist onboarding state", error)
+    }
+  }, [hydrated, currentStep, faceScanComplete, personaComplete, extractedData, accountId, sessionId])
+
+  useEffect(() => {
+    if (currentStep === "complete" && typeof window !== "undefined") {
+      window.sessionStorage.removeItem(STORAGE_KEY)
+    }
+  }, [currentStep])
 
   const handleFaceScanComplete = async (faceData: any) => {
     const fd = new FormData()
@@ -49,24 +113,29 @@ export function UserCreationDashboard() {
     setSessionId(data.session_id)
     setAccountId(data.account_id)
     setFaceScanComplete(true)
+    setPersonaComplete(false)
     setCurrentStep("persona")
   }
 
   const handlePersonaComplete = (summary: any) => {
     setPersonaComplete(true)
     setExtractedData({
-      firstName: "",
-      lastName: "",
-      dateOfBirth: "",
-      idNumber: "",
-      address: "",
-      expirationDate: "",
-      idType: "Government ID",
-      confidence: 0.85,
+      firstName: summary.first_name ?? "",
+      lastName: summary.last_name ?? "",
+      dateOfBirth: summary.date_of_birth ?? "",
+      idNumber: summary.id_number ?? "",
+      address: summary.address ?? "",
+      expirationDate: summary.expiration_date ?? "",
+      idType: summary.document_type ?? "Government ID",
+      confidence: summary.confidence ?? 0.85,
       inquiryId: summary.inquiry_id,
       personaReferenceId: summary.reference_id,
       personaHostedUrl: summary.url,
       personaEnvironment: summary.environment,
+      personaStatus: summary.status,
+      personaDecision: summary.decision,
+      personaRiskScore: summary.risk_score,
+      personaFields: summary.fields ?? {},
     })
     setCurrentStep("review")
   }
