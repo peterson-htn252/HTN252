@@ -92,7 +92,7 @@ describe("DonationForm", () => {
     const emailInput = screen.getByLabelText(/Email Address/i)
     await userEvent.type(emailInput, "donor@example.com")
 
-    const payButton = screen.getByRole("button", { name: /Pay \$50 with XRPL/i })
+    const payButton = screen.getByRole("button", { name: /Pay \$50\.00 with XRPL/i })
     await userEvent.click(payButton)
 
     expect(await screen.findByText(/Donation Successful!/i)).toBeInTheDocument()

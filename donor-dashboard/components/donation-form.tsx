@@ -1,7 +1,7 @@
 // components/DonationForm.tsx
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CreditCard, Shield, CheckCircle, AlertCircle, Loader2, Wallet } from "lucide-react"
 import { fetchNGOs, API_URL } from "@/lib/api"
+import { formatCurrency } from "@/lib/format"
 import { StripePay } from "@/components/StripePay"
 
 interface DonationFormProps {
@@ -196,11 +197,28 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
   }, [])
 
   const selectedProgramData = programs.find((p) => p.ngo_id === selectedProgram)
+  const donationAmountValue = useMemo(() => {
+    const parsed = Number.parseFloat(donationAmount || "0")
+    return Number.isFinite(parsed) ? parsed : 0
+  }, [donationAmount])
 
   const handleProgramSelect = (programId: string) => {
     setSelectedProgram(programId)
     setStep("amount")
   }
+
+  const incrementProgramDonations = useCallback((ngoId: string, amount: number) => {
+    if (!amount || Number.isNaN(amount)) {
+      return
+    }
+    setPrograms((prev) =>
+      prev.map((program) =>
+        program.ngo_id === ngoId
+          ? { ...program, lifetime_donations: Number((Number(program.lifetime_donations ?? 0) + amount).toFixed(2)) }
+          : program,
+      ),
+    )
+  }, [])
 
   const handleAmountSubmit = () => {
     if (donationAmount && Number.parseFloat(donationAmount) > 0) {
@@ -221,7 +239,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           to: selectedProgramData.xrpl_address,
-          amountXrp: Number.parseFloat(donationAmount),
+          amountXrp: donationAmountValue,
           programId: selectedProgram,
           email,
         }),
@@ -236,6 +254,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
         program: selectedProgramData?.name || "",
         paymentMethod: "Ripple (XRPL)",
       })
+      incrementProgramDonations(selectedProgram, donationAmountValue)
       setStep("complete")
       onDonationComplete?.(donationId, txHash)
     } catch (e) {
@@ -265,10 +284,11 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
       setDonationResult({
         donationId: paymentIntentId,
         blockchainId: data.txHash,
-        amount: Number.parseFloat(donationAmount),
+        amount: donationAmountValue,
         program: selectedProgramData?.name || "",
         paymentMethod: "Credit Card",
       })
+      incrementProgramDonations(selectedProgram, donationAmountValue)
       setStep("complete")
       onDonationComplete?.(paymentIntentId, data.txHash)
     } catch (err: any) {
@@ -329,11 +349,11 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>Goal</span>
-                      <span className="font-medium">{program.goal}</span>
+                      <span className="font-medium">{formatCurrency(program.goal)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Total Donations</span>
-                      <span>${program.lifetime_donations.toLocaleString()}</span>
+                      <span>{formatCurrency(program.lifetime_donations)}</span>
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Established: {new Date(program.created_at).toLocaleDateString()}
@@ -431,7 +451,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
         <CardHeader>
           <CardTitle>Payment Details</CardTitle>
           <CardDescription>
-            Donating ${donationAmount} to {selectedProgramData?.name}
+            Donating {formatCurrency(donationAmountValue)} to {selectedProgramData?.name}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -483,7 +503,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
 
             {paymentMethod === "card" ? (
               <StripePay
-                amountCents={Math.round(Number.parseFloat(donationAmount || "0") * 100)}
+                amountCents={Math.round(donationAmountValue * 100)}
                 currency="usd"
                 programId={selectedProgram}
                 email={email}
@@ -518,9 +538,9 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
               <Button
                 className="flex-1"
                 onClick={handlePayXRPL}
-                disabled={!email || isProcessing || !donationAmount}
+                disabled={!email || isProcessing || !donationAmountValue}
               >
-                {`Pay $${donationAmount} with XRPL`}
+                {`Pay ${formatCurrency(donationAmountValue)} with XRPL`}
               </Button>
             )}
           </div>
@@ -566,7 +586,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
           </div>
           <CardTitle className="text-2xl text-green-600">Donation Successful!</CardTitle>
           <CardDescription>
-            Thank you for your ${donationResult.amount} donation to {donationResult.program}
+            Thank you for your {formatCurrency(donationResult.amount)} donation to {donationResult.program}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -586,7 +606,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
             </div>
             <div className="flex justify-between">
               <span>Amount:</span>
-              <span className="font-semibold">${donationResult.amount}</span>
+              <span className="font-semibold">{formatCurrency(donationResult.amount)}</span>
             </div>
             <div className="flex justify-between">
               <span>Program:</span>
