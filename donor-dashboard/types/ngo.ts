@@ -1,6 +1,6 @@
 // /types/ngo.ts
 export type NGO = {
-  account_id: string
+  ngo_id: string
   name: string
   description: string
   goal: string

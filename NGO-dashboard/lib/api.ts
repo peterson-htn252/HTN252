@@ -80,11 +80,9 @@ class APIClient {
     const response = await this.request<{
       access_token: string;
       token_type: string;
-      account_id: string;
-      account_type: string;
+      ngo_id: string;
       name: string;
       email: string;
-      ngo_id?: string;
     }>('/accounts/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
@@ -94,7 +92,7 @@ class APIClient {
     const token: AuthToken = {
       access_token: response.access_token,
       token_type: response.token_type,
-      ngo_id: response.account_id, // Use account_id as ngo_id for compatibility
+      ngo_id: response.ngo_id,
       organization_name: response.name
     };
     
@@ -102,9 +100,8 @@ class APIClient {
     return token;
   }
 
-  async register(registrationData: RegisterRequest): Promise<{ account_id: string }> {
+  async register(registrationData: RegisterRequest): Promise<{ ngo_id: string }> {
     const accountData = {
-      account_type: "NGO" as const,
       status: "active" as const,
       name: registrationData.organization_name,
       email: registrationData.email,
@@ -114,7 +111,7 @@ class APIClient {
       description: registrationData.description
     };
     
-    return this.request<{ account_id: string }>('/accounts', {
+    return this.request<{ ngo_id: string }>('/accounts', {
       method: 'POST',
       body: JSON.stringify(accountData),
     });
@@ -122,11 +119,9 @@ class APIClient {
 
   async getCurrentUser(): Promise<NGO> {
     const account = await this.request<{
-      account_id: string;
-      account_type: string;
+      ngo_id: string;
       name: string;
       email: string;
-      ngo_id?: string;
       goal?: number | string;
       description?: string;
       status: string;
@@ -136,7 +131,7 @@ class APIClient {
     
     // Transform account data to match NGO interface
     const ngo: NGO = {
-      ngo_id: account.account_id,
+      ngo_id: account.ngo_id,
       email: account.email,
       organization_name: account.name,
       contact_name: account.name, // Use name as contact_name for now

@@ -5,8 +5,6 @@ AccountType = Literal["NGO", "RECIPIENT"]
 
 
 class AccountCreate(BaseModel):
-    account_id: Optional[str] = None
-    account_type: AccountType
     status: Literal["active", "blocked"] = "active"
     name: str
     email: str
@@ -106,12 +104,11 @@ class Token(BaseModel):
 class AccountToken(BaseModel):
     access_token: str
     token_type: str
-    account_id: str
-    account_type: str
+    ngo_id: str
 
 
 class NGOAccountSummary(BaseModel):
-    account_id: str
+    ngo_id: str
     name: str
     description: str
     goal: int

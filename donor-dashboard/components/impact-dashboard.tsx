@@ -319,7 +319,7 @@ export function ImpactDashboard({ impactData: propImpactData }: ImpactDashboardP
         <CardContent>
           <div className="space-y-4">
             {ngos.slice(0, 3).map((ngo, index) => (
-              <div key={ngo.account_id} className="flex items-start gap-4 p-4 border rounded-lg">
+              <div key={ngo.ngo_id} className="flex items-start gap-4 p-4 border rounded-lg">
                 <div
                   className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${
                     index === 0 ? "bg-green-500" : index === 1 ? "bg-blue-500" : "bg-yellow-500"
@@ -328,7 +328,7 @@ export function ImpactDashboard({ impactData: propImpactData }: ImpactDashboardP
                 <div className="flex-1">
                   <p className="font-medium">{ngo.name} - Aid Distribution</p>
                   <p className="text-sm text-muted-foreground">
-                    {ngo.description.slice(0, 100)}... Blockchain ID: 0x{ngo.account_id.slice(0, 8)}...
+                    {ngo.description.slice(0, 100)}... Blockchain ID: 0x{ngo.ngo_id.slice(0, 8)}...
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">{Math.floor(Math.random() * 24)} hours ago</p>
                 </div>

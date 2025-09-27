@@ -33,10 +33,10 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
         if not ngo_id:
             raise HTTPException(401, "Invalid authentication credentials")
         return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(401, "Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(401, "Invalid token")
+    except jwt.ExpiredSignatureError as exc:
+        raise HTTPException(401, "Token expired") from exc
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(401, "Invalid token") from exc
 
 
 def get_current_ngo(token_data: dict = Depends(verify_token)) -> dict:
@@ -46,5 +46,5 @@ def get_current_ngo(token_data: dict = Depends(verify_token)) -> dict:
         if not ngo:
             raise HTTPException(status_code=404, detail="NGO not found")
         return ngo
-    except Exception:
-        raise HTTPException(status_code=500, detail="Database error")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Database error") from exc

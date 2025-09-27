@@ -32,7 +32,7 @@ describe("DonationForm", () => {
   it("loads NGO programs and advances to the amount step when one is selected", async () => {
     fetchNgosMock.mockResolvedValue([
       {
-        account_id: "ngo-1",
+        ngo_id: "ngo-1",
         name: "Clean Water",
         description: "Bring water",
         goal: 1000,
@@ -56,7 +56,7 @@ describe("DonationForm", () => {
   it("sends ripple payments and shows the blockchain confirmation", async () => {
     fetchNgosMock.mockResolvedValue([
       {
-        account_id: "ngo-1",
+        ngo_id: "ngo-1",
         name: "Clean Water",
         description: "Bring water",
         goal: 1000,

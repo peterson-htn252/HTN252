@@ -146,7 +146,7 @@ export function FaceScanStep({ onComplete }: FaceScanStepProps) {
 
       // Example upload (uncomment if you want to upload here):
       // const fd = new FormData()
-      // fd.append("account_id", "<ACCOUNT_ID>")
+      // fd.append("ngo_id", "<ACCOUNT_ID>")
       // for (const f of files) fd.append("files", f) // must match FastAPI param name
       // await fetch("/face/enroll_batch", { method: "POST", body: fd })
 

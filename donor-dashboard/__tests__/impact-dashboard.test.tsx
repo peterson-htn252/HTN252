@@ -30,7 +30,7 @@ describe("ImpactDashboard", () => {
 
   it("renders impact metrics and programs from the API", async () => {
     const ngo = {
-      account_id: "ngo-1",
+      ngo_id: "ngo-1",
       name: "Water Wells",
       description: "Clean water access",
       goal: 1000,

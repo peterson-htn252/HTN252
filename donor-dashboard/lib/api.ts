@@ -3,7 +3,7 @@
 import { API_BASE_URL } from "./config"
 
 export interface NGO {
-  account_id: string
+  ngo_id: string
   name: string
   description: string
   goal: number              // ← number, not string
@@ -29,7 +29,7 @@ export async function fetchNGOs(): Promise<NGO[]> {
       Array.isArray(json?.data) ? json.data : []
 
     const ngos: NGO[] = rawList.map((r: any) => ({
-      account_id: r.account_id ?? r.ngo_id ?? "",
+      ngo_id: r.ngo_id ?? r.account_id ?? "",
       name: r.name ?? "",
       description: r.description ?? "",
       goal: Number(r.goal ?? 0),
@@ -50,7 +50,7 @@ export async function fetchNGOs(): Promise<NGO[]> {
 export function transformNGOsToPrograms(ngos: NGO[]) {
   const arr = Array.isArray(ngos) ? ngos : []
   return arr.map((ngo, index) => ({
-    id: ngo.account_id,
+    id: ngo.ngo_id,
     name: ngo.name,
     totalRaised: Number(ngo.lifetime_donations || 0),
     goal: Math.max(Number(ngo.lifetime_donations || 0) * 2, 50_000),
