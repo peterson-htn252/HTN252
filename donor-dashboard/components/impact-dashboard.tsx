@@ -12,6 +12,7 @@ import {
   calculateImpactData,
   type NGO,
 } from "@/lib/api"
+import { formatCurrency } from "@/lib/format"
 
 interface ImpactData {
   totalDonated: number
@@ -242,7 +243,7 @@ export function ImpactDashboard({ impactData: propImpactData }: ImpactDashboardP
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold">${region.totalReceived.toLocaleString()}</p>
+                  <p className="font-semibold">{formatCurrency(region.totalReceived)}</p>
                   <p className="text-sm text-muted-foreground">{region.peopleHelped} people helped</p>
                 </div>
               </div>
@@ -292,10 +293,10 @@ export function ImpactDashboard({ impactData: propImpactData }: ImpactDashboardP
                   <div className="flex justify-between text-sm">
                     <span>Progress</span>
                     <span>
-                      ${program.totalRaised.toLocaleString()} of ${program.goal.toLocaleString()}
+                      {formatCurrency(program.totalRaised)} of {formatCurrency(program.goal)}
                     </span>
                   </div>
-                  <Progress value={(program.totalRaised / program.goal) * 100} />
+                  <Progress value={Math.min((program.totalRaised / Math.max(program.goal, 1)) * 100, 100)} />
                 </div>
 
                 <div className="flex justify-between text-sm text-muted-foreground">

@@ -288,6 +288,48 @@ def get_all_ngo_accounts():
             else:
                 goal = int(goal or 0)
 
+            lifetime = item.get("lifetime_donations", 0)
+            try:
+                lifetime = float(lifetime)
+            except Exception:
+                lifetime = 0.0
+
+            # Sum payouts as an additional indicator of distributed funds
+            try:
+                payout_res = (
+                    supabase.table(TBL_PAYOUTS)
+                    .select("amount_minor")
+                    .eq("ngo_id", item.get("ngo_id"))
+                    .execute()
+                )
+                payout_rows = payout_res.data or []
+                payout_total = sum(int(row.get("amount_minor") or 0) for row in payout_rows)
+                payout_total_usd = round(payout_total / 100, 2)
+                lifetime = max(lifetime, payout_total_usd)
+            except Exception:
+                pass
+
+            # Keep lifetime donations in sync with wallet + expenses similar to NGO dashboard
+            try:
+                expenses_total = 0.0
+                exp_res = (
+                    supabase.table(TBL_NGO_EXPENSES)
+                    .select("expenses")
+                    .eq("ngo_id", item.get("ngo_id"))
+                    .limit(1)
+                    .execute()
+                )
+                if exp_res.data:
+                    expenses_val = exp_res.data[0].get("expenses")
+                    expenses_total = float(expenses_val or 0.0)
+                available_usd = 0.0
+                if xrpl_addr:
+                    available_usd = float(_wallet_usd(xrpl_addr))
+                inferred_total = round(available_usd + expenses_total, 2)
+                lifetime = max(lifetime, inferred_total)
+            except Exception:
+                pass
+
             ngo_accounts.append(
                 NGOAccountSummary(
                     ngo_id=item["ngo_id"],
@@ -295,7 +337,7 @@ def get_all_ngo_accounts():
                     description=item.get("description", "") or "",
                     goal=goal,
                     status=item.get("status", "inactive"),
-                    lifetime_donations=item.get("lifetime_donations", 0),
+                    lifetime_donations=round(lifetime, 2),
                     created_at=item.get("created_at"),
                     xrpl_address=xrpl_addr,
                 )

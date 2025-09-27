@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,55 +20,23 @@ import {
   TrendingUp,
   Shield,
 } from "lucide-react"
-
-interface BlockchainTransaction {
-  id: string
-  hash: string
-  type: "donation" | "allocation" | "distribution" | "redemption"
-  amount: number
-  currency: string
-  timestamp: string
-  status: "confirmed" | "pending" | "failed"
-  from: string
-  to: string
-  description: string
-  gasUsed?: number
-  blockNumber?: number
-}
-
-interface DonationTracking {
-  donationId: string
-  blockchainId: string
-  amount: number
-  program: string
-  donor: string
-  status: "received" | "allocated" | "distributed" | "completed"
-  transactions: BlockchainTransaction[]
-  recipients: {
-    id: string
-    location: string
-    amount: number
-    status: "pending" | "received" | "redeemed"
-    redeemedAt?: string
-  }[]
-  ngoOperationalCosts: {
-    amount: number
-    percentage: number
-    breakdown: {
-      category: string
-      amount: number
-      description: string
-    }[]
-  }
-}
+import {
+  trackDonation,
+  fetchTrackingSamples,
+  type DonationTracking,
+  type TrackingSample,
+} from "@/lib/api"
 
 const mockTrackingData: DonationTracking = {
   donationId: "DON-1704067200000",
   blockchainId: "0x1a2b3c4d5e6f7890abcdef1234567890abcdef12",
   amount: 100,
+  currency: "USD",
   program: "Typhoon Relief Program",
   donor: "Anonymous Donor",
   status: "distributed",
+  ngoId: null,
+  ngoName: null,
   transactions: [
     {
       id: "1",
@@ -191,27 +159,102 @@ interface BlockchainTrackerProps {
 }
 
 export function BlockchainTracker({ initialTrackingId }: BlockchainTrackerProps) {
-  const [trackingId, setTrackingId] = useState(initialTrackingId || "")
+  const [trackingId, setTrackingId] = useState(initialTrackingId ?? "")
   const [trackingData, setTrackingData] = useState<DonationTracking | null>(null)
+  const [samples, setSamples] = useState<TrackingSample[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleSearch = async () => {
-    if (!trackingId.trim()) return
+  const hasBootstrapped = useRef(false)
 
-    setIsLoading(true)
-    setError(null)
+  const fetchTracking = useCallback(
+    async (id: string, options: { updateInput?: boolean } = {}) => {
+      const trimmed = id.trim()
+      if (!trimmed) {
+        return
+      }
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+      if (options.updateInput ?? true) {
+        setTrackingId(trimmed)
+      }
 
-    if (trackingId === mockTrackingData.blockchainId || trackingId === mockTrackingData.donationId) {
-      setTrackingData(mockTrackingData)
-    } else {
-      setError("Tracking ID not found. Please check your blockchain reference ID or donation ID.")
+      setIsLoading(true)
+      setError(null)
+
+      try {
+        const result = await trackDonation(trimmed)
+        setTrackingData(result)
+      } catch (err) {
+        if (trimmed === mockTrackingData.blockchainId || trimmed === mockTrackingData.donationId) {
+          setTrackingData(mockTrackingData)
+          setError(null)
+        } else {
+          const message = err instanceof Error ? err.message : "Unable to fetch tracking data"
+          setError(message)
+          setTrackingData(null)
+        }
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    []
+  )
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadSamples = async () => {
+      try {
+        const sampleList = await fetchTrackingSamples()
+        if (!isMounted) {
+          return
+        }
+        setSamples(sampleList)
+
+        if (hasBootstrapped.current) {
+          return
+        }
+
+        const bootstrapId =
+          (initialTrackingId && initialTrackingId.trim()) ||
+          sampleList.find((sample) => sample.blockchainId)?.blockchainId ||
+          sampleList.find((sample) => sample.donationId)?.donationId ||
+          ""
+
+        if (bootstrapId) {
+          hasBootstrapped.current = true
+          await fetchTracking(bootstrapId, { updateInput: !initialTrackingId })
+        }
+      } catch (err) {
+        console.error("Failed to load tracking samples", err)
+      }
     }
 
-    setIsLoading(false)
+    void loadSamples()
+
+    return () => {
+      isMounted = false
+    }
+  }, [initialTrackingId, fetchTracking])
+
+  const handleSearch = () => {
+    void fetchTracking(trackingId)
+  }
+
+  const handleSampleSelect = (sampleId: string | null | undefined) => {
+    if (!sampleId) {
+      return
+    }
+    void fetchTracking(sampleId, { updateInput: true })
+  }
+
+  const formatMoney = (amount: number, currency?: string) => {
+    const normalizedCurrency = (currency ?? "USD").toUpperCase()
+    const rounded = Number.isFinite(amount) ? amount.toFixed(2) : String(amount)
+    if (normalizedCurrency === "USD") {
+      return `$${rounded}`
+    }
+    return `${normalizedCurrency} ${rounded}`
   }
 
   const getStatusColor = (status: string) => {
@@ -279,20 +322,44 @@ export function BlockchainTracker({ initialTrackingId }: BlockchainTrackerProps)
 
           <div className="text-sm text-muted-foreground">
             <p className="mb-2">Try these sample IDs:</p>
-            <div className="space-y-1">
-              <button
-                className="block text-primary hover:underline font-mono text-xs"
-                onClick={() => setTrackingId(mockTrackingData.blockchainId)}
-              >
-                {mockTrackingData.blockchainId}
-              </button>
-              <button
-                className="block text-primary hover:underline font-mono text-xs"
-                onClick={() => setTrackingId(mockTrackingData.donationId)}
-              >
-                {mockTrackingData.donationId}
-              </button>
-            </div>
+            {samples.length > 0 ? (
+              <div className="space-y-1">
+                {samples.map((sample) => {
+                  const candidateId = sample.blockchainId ?? sample.donationId
+                  if (!candidateId) {
+                    return null
+                  }
+                  const amountLabel = sample.amount
+                    ? ` · ${sample.currency ?? "USD"} ${sample.amount.toFixed(2)}`
+                    : ""
+                  return (
+                    <button
+                      key={`${sample.donationId}-${sample.blockchainId ?? ""}`}
+                      className="block text-primary hover:underline font-mono text-xs"
+                      onClick={() => handleSampleSelect(candidateId)}
+                    >
+                      {candidateId}
+                      {amountLabel && <span className="ml-1 text-muted-foreground">{amountLabel}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <button
+                  className="block text-primary hover:underline font-mono text-xs"
+                  onClick={() => handleSampleSelect(mockTrackingData.blockchainId)}
+                >
+                  {mockTrackingData.blockchainId}
+                </button>
+                <button
+                  className="block text-primary hover:underline font-mono text-xs"
+                  onClick={() => handleSampleSelect(mockTrackingData.donationId)}
+                >
+                  {mockTrackingData.donationId}
+                </button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -307,6 +374,10 @@ export function BlockchainTracker({ initialTrackingId }: BlockchainTrackerProps)
                 <Shield className="h-5 w-5 text-primary" />
                 Donation Overview
               </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                {trackingData.program}
+                {trackingData.ngoName ? ` · ${trackingData.ngoName}` : ""}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -366,7 +437,7 @@ export function BlockchainTracker({ initialTrackingId }: BlockchainTrackerProps)
                           <p className="text-sm text-muted-foreground">{tx.description}</p>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-muted-foreground">
                             <div>
-                              <span className="font-medium">Amount:</span> ${tx.amount} {tx.currency}
+                              <span className="font-medium">Amount:</span> {formatMoney(tx.amount, tx.currency)}
                             </div>
                             <div>
                               <span className="font-medium">Block:</span> #{tx.blockNumber}
@@ -416,7 +487,7 @@ export function BlockchainTracker({ initialTrackingId }: BlockchainTrackerProps)
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="font-semibold">${recipient.amount}</p>
+                          <p className="font-semibold">{formatMoney(recipient.amount, trackingData.currency)}</p>
                           <div className="flex items-center gap-1 text-sm">
                             {recipient.status === "redeemed" ? (
                               <>
@@ -453,10 +524,10 @@ export function BlockchainTracker({ initialTrackingId }: BlockchainTrackerProps)
                 <CardContent className="space-y-6">
                   <div className="text-center p-6 border rounded-lg bg-muted/50">
                     <h3 className="text-2xl font-bold text-primary">
-                      ${trackingData.ngoOperationalCosts.amount} ({trackingData.ngoOperationalCosts.percentage}%)
+                      {formatMoney(trackingData.ngoOperationalCosts.amount, trackingData.currency)} ({trackingData.ngoOperationalCosts.percentage}%)
                     </h3>
                     <p className="text-muted-foreground">
-                      Total operational costs from your ${trackingData.amount} donation
+                      Total operational costs from your {formatMoney(trackingData.amount, trackingData.currency)} donation
                     </p>
                   </div>
 
@@ -468,9 +539,9 @@ export function BlockchainTracker({ initialTrackingId }: BlockchainTrackerProps)
                           <p className="text-sm text-muted-foreground">{cost.description}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-semibold">${cost.amount}</p>
+                          <p className="font-semibold">{formatMoney(cost.amount, trackingData.currency)}</p>
                           <p className="text-xs text-muted-foreground">
-                            {((cost.amount / trackingData.amount) * 100).toFixed(1)}%
+                            {trackingData.amount > 0 ? ((cost.amount / trackingData.amount) * 100).toFixed(1) : "0.0"}%
                           </p>
                         </div>
                       </div>

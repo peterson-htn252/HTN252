@@ -113,7 +113,7 @@ class NGOAccountSummary(BaseModel):
     description: str
     goal: int
     status: str
-    lifetime_donations: int
+    lifetime_donations: float
     created_at: str
     xrpl_address: Optional[str] = None
 
