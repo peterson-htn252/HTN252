@@ -62,7 +62,7 @@ describe("DonorDashboard", () => {
 
     const ngoData = [
       {
-        account_id: "ngo-1",
+        ngo_id: "ngo-1",
         name: "Water Wells",
         description: "Clean water access",
         goal: 1000,

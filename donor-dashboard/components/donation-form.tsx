@@ -24,7 +24,7 @@ interface DonationFormProps {
 type PaymentMethod = "card" | "ripple"
 
 interface NGOProgram {
-  account_id: string
+  ngo_id: string
   name: string
   description: string
   goal: number
@@ -105,7 +105,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
 
         // 1) Set base cards immediately (fast UI)
         const base: NGOProgram[] = ngos.map((n: any) => ({
-          account_id: n.account_id,
+          ngo_id: n.ngo_id,
           name: n.name,
           description: n.description,
           goal: Number(n.goal ?? 0),
@@ -119,7 +119,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
 
         // 2) For each, fetch EIN (JSON) then stream summary (text)
         for (const n of ngos) {
-          const programKey = n.account_id
+          const programKey = n.ngo_id
 
           // EIN lookup
     //       let ein: string | undefined
@@ -147,7 +147,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     //           if (cancelled || !buffer) return
     //           setPrograms((prev) =>
     //             prev.map((p) =>
-    //               p.account_id === programKey ? { ...p, summary: (p.summary || "") + buffer } : p
+    //               p.ngo_id === programKey ? { ...p, summary: (p.summary || "") + buffer } : p
     //             )
     //           )
     //           buffer = ""
@@ -195,7 +195,7 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
     }
   }, [])
 
-  const selectedProgramData = programs.find((p) => p.account_id === selectedProgram)
+  const selectedProgramData = programs.find((p) => p.ngo_id === selectedProgram)
 
   const handleProgramSelect = (programId: string) => {
     setSelectedProgram(programId)
@@ -307,9 +307,9 @@ export function DonationForm({ onDonationComplete }: DonationFormProps) {
           <div className="grid gap-4">
             {programs.map((program) => (
               <Card
-                key={program.account_id}
+                key={program.ngo_id}
                 className="cursor-pointer hover:shadow-md transition-shadow border-2 hover:border-primary/50"
-                onClick={() => handleProgramSelect(program.account_id)}
+                onClick={() => handleProgramSelect(program.ngo_id)}
               >
                 <CardHeader>
                   <div className="flex items-center justify-between">

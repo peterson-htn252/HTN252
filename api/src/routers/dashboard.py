@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from core.auth import get_current_ngo
-from core.database import TBL_ACCOUNTS, TBL_NGO_EXPENSES, TBL_RECIPIENTS
+from core.database import TBL_ACCOUNTS, TBL_NGO_EXPENSES, TBL_PAYOUTS, TBL_RECIPIENTS
 from core.utils import now_iso
 from core.wallet import get_wallet_balance, resolve_classic_address
 
@@ -21,7 +21,7 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
         active_recipients = len(recipients_resp.get("Items", []))
 
         # Get NGO account details
-        account = TBL_ACCOUNTS.get_item(Key={"account_id": ngo_id}).get("Item")
+        account = TBL_ACCOUNTS.get_item(Key={"ngo_id": ngo_id}).get("Item")
         if not account:
             raise HTTPException(status_code=404, detail="NGO account not found")
 
@@ -36,19 +36,35 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
             available_funds = 0
 
         # Get total NGO expenses from auditor table
+        total_expenses = 0
         try:
             ngo_expense_resp = TBL_NGO_EXPENSES.get_item(Key={"ngo_id": ngo_id})
-            total_expenses = int((ngo_expense_resp.get("Item", {}).get("expenses", 0.0)) * 100)  # Convert to minor units
+            expenses_val = ngo_expense_resp.get("Item", {}).get("expenses")
+            if expenses_val is not None:
+                total_expenses = int(round(float(expenses_val) * 100))
         except Exception:
             total_expenses = 0
+
+        if total_expenses == 0:
+            try:
+                payout_resp = TBL_PAYOUTS.scan(
+                    FilterExpression="ngo_id = :ngo_id",
+                    ExpressionAttributeValues={":ngo_id": ngo_id},
+                )
+                payout_items = payout_resp.get("Items", [])
+                computed_total = sum(int(item.get("amount_minor") or 0) for item in payout_items)
+                if computed_total:
+                    total_expenses = computed_total
+            except Exception:
+                pass
 
         # Get lifetime donations and goal from account
         lifetime_donations = account.get("lifetime_donations", 0)
         # Convert to minor units if needed
         if isinstance(lifetime_donations, (int, float)) and lifetime_donations < 10000:
-            lifetime_donations = int(lifetime_donations * 100)
+            lifetime_donations = int(round(float(lifetime_donations) * 100))
         else:
-            lifetime_donations = int(lifetime_donations)
+            lifetime_donations = int(lifetime_donations or 0)
 
         goal = account.get("goal", 0)
         if isinstance(goal, str):
@@ -62,6 +78,10 @@ def get_dashboard_stats(current_ngo: dict = Depends(get_current_ngo)):
             goal = int(goal)
 
         # Calculate utilization rate
+        inferred_lifetime = max(available_funds + total_expenses, 0)
+        if lifetime_donations < inferred_lifetime:
+            lifetime_donations = inferred_lifetime
+
         utilization_rate = (total_expenses / lifetime_donations * 100) if lifetime_donations > 0 else 0
 
         return {

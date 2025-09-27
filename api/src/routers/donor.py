@@ -109,20 +109,20 @@ def _normalize_address(candidate: Optional[str]) -> Optional[str]:
     return None
 
 
-def _account_address_from_id(account_id: str) -> Optional[str]:
+def _account_address_from_id(ngo_id: str) -> Optional[str]:
     try:
-        account = TBL_ACCOUNTS.get_item(Key={"account_id": account_id}).get("Item")
+        account = TBL_ACCOUNTS.get_item(Key={"ngo_id": ngo_id}).get("Item")
         if account:
             for key in ("address", "xrpl_address", "public_key"):
                 cand = _normalize_address(account.get(key))
                 if cand:
                     return cand
     except Exception as exc:  # pragma: no cover - logged for debugging
-        logger.debug("Account lookup failed for %s: %s", account_id, exc)
+        logger.debug("Account lookup failed for %s: %s", ngo_id, exc)
     try:
         resp = TBL_ACCOUNTS.scan(
-            FilterExpression="account_id = :aid",
-            ExpressionAttributeValues={":aid": account_id},
+            FilterExpression="ngo_id = :aid",
+            ExpressionAttributeValues={":aid": ngo_id},
         )
         for item in resp.get("Items", []):
             for key in ("address", "xrpl_address", "public_key"):
@@ -130,7 +130,7 @@ def _account_address_from_id(account_id: str) -> Optional[str]:
                 if cand:
                     return cand
     except Exception as exc:  # pragma: no cover
-        logger.debug("Account scan failed for %s: %s", account_id, exc)
+        logger.debug("Account scan failed for %s: %s", ngo_id, exc)
     return None
 
 

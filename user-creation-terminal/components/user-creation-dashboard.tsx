@@ -26,7 +26,7 @@ export function UserCreationDashboard() {
   const [faceScanComplete, setFaceScanComplete] = useState(false)
   const [personaComplete, setPersonaComplete] = useState(false)
   const [extractedData, setExtractedData] = useState<any>(null)
-  const [accountId, setAccountId] = useState<string | null>(null)
+  const [ngoId, setNgoId] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
   const [personaResumeContext, setPersonaResumeContext] = useState<PersonaResumeContext | null>(null)
@@ -61,8 +61,8 @@ export function UserCreationDashboard() {
         setFaceScanComplete(parsed.faceScanComplete)
       }
       setPersonaComplete(personaWasComplete && parsed.currentStep === "complete")
-      if (parsed.accountId) {
-        setAccountId(parsed.accountId)
+      if (parsed.ngoId) {
+        setNgoId(parsed.ngoId)
       }
       if (parsed.sessionId) {
         setSessionId(parsed.sessionId)
@@ -90,7 +90,7 @@ export function UserCreationDashboard() {
       currentStep,
       faceScanComplete,
       personaComplete,
-      accountId,
+      ngoId,
       sessionId,
       personaContext: personaResumeContext,
     }
@@ -99,7 +99,7 @@ export function UserCreationDashboard() {
     } catch (error) {
       console.warn("Failed to persist onboarding state", error)
     }
-  }, [hydrated, currentStep, faceScanComplete, personaComplete, accountId, sessionId, personaResumeContext])
+  }, [hydrated, currentStep, faceScanComplete, personaComplete, ngoId, sessionId, personaResumeContext])
 
   useEffect(() => {
     if (currentStep === "complete" && typeof window !== "undefined") {
@@ -109,7 +109,7 @@ export function UserCreationDashboard() {
 
   const handleFaceScanComplete = async (faceData: any) => {
     const fd = new FormData()
-    if (accountId) fd.append("account_id", accountId)
+    if (ngoId) fd.append("ngo_id", ngoId)
     for (const f of faceData.files) fd.append("files", f)
     const res = await fetch(`${API_BASE_URL}/face/enroll`, {
       method: "POST",
@@ -121,7 +121,7 @@ export function UserCreationDashboard() {
       return
     }
     setSessionId(data.session_id)
-    setAccountId(data.account_id)
+    setNgoId(data.ngo_id)
     setFaceScanComplete(true)
     setPersonaComplete(false)
     setExtractedData(null)
@@ -174,7 +174,7 @@ export function UserCreationDashboard() {
       return
     }
     const data = await res.json()
-    if (data.account_id) setAccountId(data.account_id)
+    if (data.ngo_id) setNgoId(data.ngo_id)
     setCurrentStep("complete")
   }
 
@@ -276,7 +276,7 @@ export function UserCreationDashboard() {
 
           {currentStep === "persona" && (
             <PersonaVerificationStep
-              accountId={accountId}
+              ngoId={ngoId}
               onComplete={handlePersonaComplete}
               initialContext={personaResumeContext}
             />

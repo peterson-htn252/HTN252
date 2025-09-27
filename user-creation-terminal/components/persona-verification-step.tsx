@@ -20,7 +20,7 @@ interface PersonaInquirySummary {
   inquiry_id: string
   status?: string | null
   reference_id?: string | null
-  account_id?: string | null
+  ngo_id?: string | null
   first_name?: string | null
   last_name?: string | null
   date_of_birth?: string | null
@@ -36,7 +36,7 @@ interface PersonaInquirySummary {
 }
 
 interface PersonaVerificationStepProps {
-  accountId?: string | null
+  ngoId?: string | null
   initialContext?: {
     inquiryId: string | null
     referenceId: string | null
@@ -68,7 +68,7 @@ const STATUS_MESSAGES: Record<string, string> = {
 const FALLBACK_CONFIDENCE = 0.85
 const PERSONA_ENV_FALLBACK = process.env.NEXT_PUBLIC_PERSONA_ENV ?? "sandbox"
 
-export function PersonaVerificationStep({ accountId, initialContext, onComplete }: PersonaVerificationStepProps) {
+export function PersonaVerificationStep({ ngoId, initialContext, onComplete }: PersonaVerificationStepProps) {
   const [hostedLink, setHostedLink] = useState<PersonaHostedLink | null>(null)
   const [flowState, setFlowState] = useState<string | null>(null)
   const [summary, setSummary] = useState<PersonaInquirySummary | null>(null)
@@ -167,7 +167,7 @@ export function PersonaVerificationStep({ accountId, initialContext, onComplete 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          account_id: accountId ?? undefined,
+          ngo_id: ngoId ?? undefined,
           redirect_uri: redirectUri,
           state: newState,
         }),
@@ -187,7 +187,7 @@ export function PersonaVerificationStep({ accountId, initialContext, onComplete 
     } finally {
       setIsLoading(false)
     }
-  }, [accountId, generateState, redirectUri])
+  }, [ngoId, generateState, redirectUri])
 
   useEffect(() => {
     if (!hostedLink && !isLoading && redirectUri) {
@@ -229,7 +229,7 @@ export function PersonaVerificationStep({ accountId, initialContext, onComplete 
         body: JSON.stringify({
           inquiry_id: inquiryId ?? undefined,
           reference_id: referenceId ?? undefined,
-          account_id: accountId ?? undefined,
+          ngo_id: ngoId ?? undefined,
         }),
       })
       if (!res.ok) {
@@ -270,7 +270,7 @@ export function PersonaVerificationStep({ accountId, initialContext, onComplete 
     } finally {
       setIsLoading(false)
     }
-  }, [accountId, flowState, hostedLink, onComplete, summary])
+  }, [ngoId, flowState, hostedLink, onComplete, summary])
 
   const statusMessage = useMemo(() => {
     if (!status) {

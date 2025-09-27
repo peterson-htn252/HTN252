@@ -45,10 +45,11 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
 
 router = APIRouter()
 
-# Table names
-TBL_ACCOUNTS = "accounts"
-TBL_RECIPIENTS = "recipients"
-TBL_NGO_EXPENSES = "ngo_expenses"
+# Table names (respect environment overrides to mirror core.database)
+TBL_ACCOUNTS = os.getenv("ACCOUNTS_TABLE", "accounts")
+TBL_RECIPIENTS = os.getenv("RECIPIENTS_TABLE", "recipients")
+TBL_NGO_EXPENSES = os.getenv("NGO_EXPENSES_TABLE", "ngo_expense")
+TBL_PAYOUTS = os.getenv("PAYOUTS_TABLE", "payouts")
 
 
 # -----------------------------------------------------------------------------
@@ -65,11 +66,11 @@ def _usd(amount: Any, positive: bool = True) -> Decimal:
     return d
 
 
-def _get_account_by_id(account_id: str) -> Dict[str, Any]:
+def _get_account_by_ngo_id(ngo_id: str) -> Dict[str, Any]:
     res = (
         supabase.table(TBL_ACCOUNTS)
         .select("*")
-        .eq("account_id", account_id)
+        .eq("ngo_id", ngo_id)
         .limit(1)
         .execute()
     )
@@ -150,12 +151,9 @@ def _sanitize_recipient_response(recipient: Dict[str, Any]) -> Dict[str, Any]:
 # -----------------------------------------------------------------------------
 @router.post("/accounts", tags=["accounts"])
 def create_account(body: AccountCreate):
-    """Create an account and generate an XRPL wallet."""
-    account_id = body.account_id or str(uuid.uuid4())
+    """Create an NGO account and generate an XRPL wallet."""
+    ngo_id = body.ngo_id or str(uuid.uuid4())
     hashed_password = hash_password(body.password)
-    ngo_id = body.ngo_id
-    if body.account_type == "NGO" and not ngo_id:
-        ngo_id = account_id
 
     try:
         wallet = create_new_wallet()
@@ -167,13 +165,11 @@ def create_account(body: AccountCreate):
         raise HTTPException(status_code=500, detail=f"Failed to generate XRPL wallet: {e}") from e
 
     data = {
-        "account_id": account_id,
-        "account_type": body.account_type,
+        "ngo_id": ngo_id,
         "status": body.status,
         "email": body.email,
         "name": body.name,
         "password_hash": hashed_password,
-        "ngo_id": ngo_id,
         "goal": body.goal,
         "description": body.description,
         "lifetime_donations": 0,
@@ -190,17 +186,7 @@ def create_account(body: AccountCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Account creation failed: {e}") from e
 
-    # If NGO, ensure an expense row exists
-    if body.account_type == "NGO":
-        try:
-            supabase.table(TBL_NGO_EXPENSES).insert(
-                {"ngo_id": account_id, "expenses": 0.0, "created_at": now_iso()}
-            ).execute()
-        except Exception:
-            # ignore if it already exists or table is not set up
-            pass
-
-    return {"account_id": account_id}
+    return {"ngo_id": ngo_id}
 
 
 @router.post("/accounts/login", tags=["accounts"])
@@ -213,15 +199,13 @@ def login_account(body: AccountLogin):
         if account.get("status") != "active":
             raise HTTPException(status_code=401, detail="Account is not active")
 
-        token = create_access_token({"sub": account["account_id"], "email": account["email"]})
+        token = create_access_token({"sub": account["ngo_id"], "email": account["email"]})
         return {
             "access_token": token,
             "token_type": "bearer",
-            "account_id": account["account_id"],
-            "account_type": account["account_type"],
+            "ngo_id": account["ngo_id"],
             "name": account["name"],
             "email": account["email"],
-            "ngo_id": account.get("ngo_id"),
         }
     except HTTPException:
         raise
@@ -233,7 +217,7 @@ def login_account(body: AccountLogin):
 def get_current_account(current_user: dict = Depends(verify_token)):
     """Return the current account. Lazily backfill XRPL keys and address if missing."""
     try:
-        account = _get_account_by_id(current_user["sub"])
+        account = _get_account_by_ngo_id(current_user["sub"])
 
         # Backfill wallet if legacy
         need_update = False
@@ -264,7 +248,7 @@ def get_current_account(current_user: dict = Depends(verify_token)):
                         "address": account.get("address"),
                         "seed": account.get("seed"),
                     }
-                ).eq("account_id", account["account_id"]).execute()
+                ).eq("ngo_id", account["ngo_id"]).execute()
             except Exception:
                 pass
 
@@ -281,8 +265,7 @@ def get_all_ngo_accounts():
     try:
         res = (
             supabase.table(TBL_ACCOUNTS)
-            .select("account_id,name,description,goal,status,lifetime_donations,created_at,public_key,address")
-            .eq("account_type", "NGO")
+            .select("ngo_id,name,description,goal,status,lifetime_donations,created_at,public_key,address")
             .execute()
         )
         items = res.data or []
@@ -307,7 +290,7 @@ def get_all_ngo_accounts():
 
             ngo_accounts.append(
                 NGOAccountSummary(
-                    account_id=item["account_id"],
+                    ngo_id=item["ngo_id"],
                     name=item.get("name", ""),
                     description=item.get("description", "") or "",
                     goal=goal,
@@ -326,11 +309,8 @@ def get_all_ngo_accounts():
 def get_dashboard_stats(current_user: dict = Depends(verify_token)):
     """Return dashboard statistics for the current NGO account."""
     try:
-        account = _get_account_by_id(current_user["sub"])
-        if account.get("account_type") != "NGO":
-            raise HTTPException(status_code=403, detail="Access denied: NGO account required")
-
-        ngo_id = account["account_id"]
+        account = _get_account_by_ngo_id(current_user["sub"])
+        ngo_id = account["ngo_id"]
 
         # Active recipients count
         try:
@@ -345,7 +325,8 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
         except Exception:
             active_recipients = 0
 
-        # Expenses from external audit table
+        # Expenses from external audit table (fallback to payouts sum if unset)
+        total_expenses_cents = 0
         try:
             exp_res = (
                 supabase.table(TBL_NGO_EXPENSES)
@@ -354,10 +335,26 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
                 .limit(1)
                 .execute()
             )
-            expenses = (exp_res.data or [{}])[0].get("expenses", 0.0) or 0.0
-            total_expenses_cents = int(round(float(expenses) * 100))
+            expenses_val = (exp_res.data or [{}])[0].get("expenses")
+            if expenses_val is not None:
+                total_expenses_cents = int(round(float(expenses_val) * 100))
         except Exception:
             total_expenses_cents = 0
+
+        if total_expenses_cents == 0:
+            try:
+                payout_res = (
+                    supabase.table(TBL_PAYOUTS)
+                    .select("amount_minor")
+                    .eq("ngo_id", ngo_id)
+                    .execute()
+                )
+                payout_rows = payout_res.data or []
+                computed_total = sum(int(row.get("amount_minor") or 0) for row in payout_rows)
+                if computed_total:
+                    total_expenses_cents = computed_total
+            except Exception:
+                pass
 
         # Wallet available funds from XRP balance
         try:
@@ -371,12 +368,16 @@ def get_dashboard_stats(current_user: dict = Depends(verify_token)):
         except Exception:
             available_funds_cents = 0
 
-        # Lifetime donations as minor units
+        # Lifetime donations as minor units (derive from balance + expenses if unset)
         lifetime = account.get("lifetime_donations", 0)
         if isinstance(lifetime, (int, float)) and lifetime < 10000:
             lifetime_cents = int(round(float(lifetime) * 100))
         else:
             lifetime_cents = int(lifetime or 0)
+
+        inferred_lifetime = max(available_funds_cents + total_expenses_cents, 0)
+        if lifetime_cents < inferred_lifetime:
+            lifetime_cents = inferred_lifetime
 
         # Goal in dollars (int)
         goal = account.get("goal", 0)
@@ -415,8 +416,8 @@ async def stream_dashboard_balance(websocket: WebSocket, token: str = Query(defa
 
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        account_id = payload.get("sub")
-        if not account_id:
+        ngo_id = payload.get("sub")
+        if not ngo_id:
             await websocket.close(code=4401, reason="Invalid token payload")
             return
     except jwt.ExpiredSignatureError:
@@ -433,10 +434,7 @@ async def stream_dashboard_balance(websocket: WebSocket, token: str = Query(defa
 
     async def load_balance_snapshot() -> Tuple[int, str]:
         def _snapshot() -> Tuple[int, str]:
-            account = _get_account_by_id(account_id)
-            if account.get("account_type") != "NGO":
-                raise PermissionError("NGO account required")
-
+            account = _get_account_by_ngo_id(ngo_id)
             addr = account.get("address") or (
                 derive_address_from_public_key(account["public_key"])
                 if account.get("public_key")
@@ -487,11 +485,8 @@ def list_recipients(
 ):
     """List recipients for the current NGO account."""
     try:
-        account = _get_account_by_id(current_user["sub"])
-        if account.get("account_type") != "NGO":
-            raise HTTPException(status_code=403, detail="Access denied: NGO account required")
-
-        ngo_id = account["account_id"]
+        account = _get_account_by_ngo_id(current_user["sub"])
+        ngo_id = account["ngo_id"]
 
         q = supabase.table(TBL_RECIPIENTS).select("*").eq("ngo_id", ngo_id)
         if search:
@@ -526,12 +521,9 @@ def list_recipients(
 def create_recipient(body: RecipientCreate, current_user: dict = Depends(verify_token)):
     """Create a new recipient and generate an XRPL wallet."""
     try:
-        account = _get_account_by_id(current_user["sub"])
-        if account.get("account_type") != "NGO":
-            raise HTTPException(status_code=403, detail="Access denied: NGO account required")
-
+        account = _get_account_by_ngo_id(current_user["sub"])
         recipient_id = str(uuid.uuid4())
-        ngo_id = account["account_id"]
+        ngo_id = account["ngo_id"]
 
         try:
             wallet = create_new_wallet()
@@ -580,12 +572,9 @@ def manage_recipient_balance(
             raise HTTPException(status_code=400, detail="operation_type must be 'deposit' or 'withdraw'")
         amount_usd = _usd(body.amount, positive=True)
 
-        ngo = _get_account_by_id(current_user["sub"])
-        if ngo.get("account_type") != "NGO":
-            raise HTTPException(status_code=403, detail="Access denied: NGO account required")
-
+        ngo = _get_account_by_ngo_id(current_user["sub"])
         rec = _get_recipient_by_id(recipient_id)
-        if rec.get("ngo_id") != ngo["account_id"]:
+        if rec.get("ngo_id") != ngo["ngo_id"]:
             raise HTTPException(status_code=404, detail="Recipient not found")
 
         balance_info = balance_from_public_key(rec.get("public_key"))

@@ -25,9 +25,13 @@ router = APIRouter(prefix="/persona", tags=["persona"])
 
 
 class HostedLinkRequest(BaseModel):
+    ngo_id: Optional[str] = Field(
+        default=None,
+        description="Existing NGO identifier to embed in the reference ID",
+    )
     account_id: Optional[str] = Field(
         default=None,
-        description="Existing account identifier to embed in the reference ID",
+        description="Deprecated: use ngo_id instead",
     )
     reference_id: Optional[str] = Field(
         default=None,
@@ -59,9 +63,9 @@ class InquirySummaryRequest(BaseModel):
         default=None,
         description="Reference identifier that was supplied when creating the hosted link",
     )
-    account_id: Optional[str] = Field(
+    ngo_id: Optional[str] = Field(
         default=None,
-        description="Associated account identifier for downstream bookkeeping",
+        description="Associated NGO identifier for downstream bookkeeping",
     )
 
 
@@ -69,6 +73,7 @@ class InquirySummary(BaseModel):
     inquiry_id: str
     status: Optional[str]
     reference_id: Optional[str]
+    ngo_id: Optional[str]
     account_id: Optional[str]
     first_name: Optional[str]
     last_name: Optional[str]
@@ -110,7 +115,7 @@ def _ensure_persona_ready() -> None:
 def create_hosted_link(body: HostedLinkRequest) -> HostedLinkResponse:
     _ensure_template_ready()
 
-    reference_id = body.reference_id or body.account_id or str(uuid.uuid4())
+    reference_id = body.reference_id or body.ngo_id or body.account_id or str(uuid.uuid4())
 
     params = {
         "inquiry-template-id": PERSONA_TEMPLATE_ID,
@@ -169,6 +174,7 @@ def fetch_inquiry_summary(body: InquirySummaryRequest) -> InquirySummary:
         inquiry_id=inquiry_id,
         status=as_string(attributes.get("status")),
         reference_id=reference_id,
+        ngo_id=body.ngo_id or body.account_id,
         account_id=body.account_id,
         first_name=normalized.get("first_name"),
         last_name=normalized.get("last_name"),

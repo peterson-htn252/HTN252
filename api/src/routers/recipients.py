@@ -35,7 +35,7 @@ router = APIRouter()
 
 
 def _load_wallets(ngo_id: str, recipient: dict) -> tuple[WalletDetails, WalletDetails]:
-    account = TBL_ACCOUNTS.get_item(Key={"account_id": ngo_id}).get("Item")
+    account = TBL_ACCOUNTS.get_item(Key={"ngo_id": ngo_id}).get("Item")
     if not account:
         raise HTTPException(status_code=500, detail="NGO account not found")
 
