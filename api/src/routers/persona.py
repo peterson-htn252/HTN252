@@ -74,7 +74,6 @@ class InquirySummary(BaseModel):
     status: Optional[str]
     reference_id: Optional[str]
     ngo_id: Optional[str]
-    account_id: Optional[str]
     first_name: Optional[str]
     last_name: Optional[str]
     date_of_birth: Optional[str]
