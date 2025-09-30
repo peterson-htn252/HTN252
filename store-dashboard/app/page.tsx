@@ -1,12 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { ShoppingCart, Plus, Minus, Trash2, DollarSign, History, Clock, CheckCircle, XCircle } from "lucide-react"
+import { ShoppingCart, Plus, Minus, Trash2, DollarSign, History, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react"
+import { API_BASE_URL } from "@/lib/config"
 
 const products = [
   { id: "001", name: "Apple", price: 1.5, category: "Produce" },
@@ -36,8 +37,45 @@ interface Transaction {
   timestamp: string
   items: CartItem[]
   total: number
-  status: "pending" | "completed" | "failed"
+  status: "pending" | "processing" | "completed" | "failed"
 }
+
+interface CheckoutRequestPayload {
+  transactionId: string
+  vendorName: string
+  items: CartItem[]
+  total: number
+  storeId: string
+  programId: string
+}
+
+interface PaymentAuthorizationPayload {
+  voucherId: string
+  transactionId: string
+  storeId: string
+  programId: string
+  amountMinor: number
+  currency: string
+  recipientId: string
+}
+
+interface PaymentTerminalMessageBase {
+  scope: "payment-terminal"
+}
+
+type TerminalOutboundMessage =
+  | (PaymentTerminalMessageBase & { type: "checkout_request"; transaction: CheckoutRequestPayload })
+  | (PaymentTerminalMessageBase & {
+      type: "payment_processed"
+      transactionId: string
+      status: "success" | "error"
+      result?: unknown
+      error?: string
+    })
+
+type TerminalInboundMessage =
+  | (PaymentTerminalMessageBase & { type: "terminal_ready" })
+  | (PaymentTerminalMessageBase & { type: "payment_authorized"; payload: PaymentAuthorizationPayload })
 
 export default function POSCheckout() {
   const [cart, setCart] = useState<CartItem[]>([])
@@ -46,6 +84,147 @@ export default function POSCheckout() {
   const [customItem, setCustomItem] = useState("")
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [showTransactions, setShowTransactions] = useState(false)
+  const [pendingTerminalRequest, setPendingTerminalRequest] = useState<CheckoutRequestPayload | null>(null)
+  const [terminalReady, setTerminalReady] = useState(false)
+
+  const terminalWindowRef = useRef<Window | null>(null)
+
+  const terminalOrigin = useMemo(() => {
+    try {
+      return new URL(PAYMENT_TERMINAL_URL).origin
+    } catch {
+      return PAYMENT_TERMINAL_URL
+    }
+  }, [])
+
+  const sendMessageToTerminal = useCallback(
+    (message: TerminalOutboundMessage) => {
+      const target = terminalWindowRef.current
+      if (!target || target.closed) {
+        console.warn("Payment terminal window is not available for messaging")
+        return false
+      }
+
+      try {
+        target.postMessage(message, terminalOrigin)
+        return true
+      } catch (error) {
+        console.error("Failed to postMessage to payment terminal", error)
+        return false
+      }
+    },
+    [terminalOrigin],
+  )
+
+  const updateTransactionStatus = useCallback((transactionId: string, status: Transaction["status"], extra?: Partial<Transaction>) => {
+    setTransactions((prev) =>
+      prev.map((transaction) =>
+        transaction.id === transactionId
+          ? {
+              ...transaction,
+              ...extra,
+              status,
+            }
+          : transaction,
+      ),
+    )
+  }, [])
+
+  const processAuthorizedPayment = useCallback(
+    async (payload: PaymentAuthorizationPayload) => {
+      updateTransactionStatus(payload.transactionId, "processing")
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/redeem`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            voucher_id: payload.voucherId,
+            store_id: payload.storeId,
+            recipient_id: payload.recipientId,
+            program_id: payload.programId,
+            amount_minor: payload.amountMinor,
+            currency: payload.currency,
+          }),
+        })
+
+        const result = await response.json().catch(() => ({}))
+
+        if (!response.ok) {
+          throw new Error(result.detail || `Payment failed (${response.status})`)
+        }
+
+        updateTransactionStatus(payload.transactionId, "completed")
+        sendMessageToTerminal({
+          scope: "payment-terminal",
+          type: "payment_processed",
+          transactionId: payload.transactionId,
+          status: "success",
+          result,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Payment failed. Please try again."
+        updateTransactionStatus(payload.transactionId, "failed")
+        sendMessageToTerminal({
+          scope: "payment-terminal",
+          type: "payment_processed",
+          transactionId: payload.transactionId,
+          status: "error",
+          error: message,
+        })
+      }
+    },
+    [sendMessageToTerminal, updateTransactionStatus],
+  )
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data as TerminalInboundMessage | null
+      if (!data || typeof data !== "object" || data.scope !== "payment-terminal") {
+        return
+      }
+
+      const sameOrigin = event.origin === window.location.origin
+      const fromTerminal = event.origin === terminalOrigin
+      const nullOrigin = event.origin === "null"
+      if (!fromTerminal && !sameOrigin && !nullOrigin) {
+        return
+      }
+
+      if (event.source && "postMessage" in event.source) {
+        terminalWindowRef.current = event.source as Window
+      }
+
+      if (data.type === "terminal_ready") {
+        setTerminalReady(true)
+        return
+      }
+
+      if (data.type === "payment_authorized") {
+        setTerminalReady(true)
+        processAuthorizedPayment(data.payload)
+      }
+    }
+
+    window.addEventListener("message", handleMessage)
+    return () => window.removeEventListener("message", handleMessage)
+  }, [processAuthorizedPayment, terminalOrigin])
+
+  useEffect(() => {
+    if (!terminalReady || !pendingTerminalRequest) {
+      return
+    }
+
+    const sent = sendMessageToTerminal({
+      scope: "payment-terminal",
+      type: "checkout_request",
+      transaction: pendingTerminalRequest,
+    })
+
+    if (sent) {
+      setPendingTerminalRequest(null)
+    }
+  }, [pendingTerminalRequest, sendMessageToTerminal, terminalReady])
 
   const addItemById = (productId: string) => {
     const product = products.find((p) => p.id === productId)
@@ -100,57 +279,40 @@ export default function POSCheckout() {
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
 
-  const handleCompleteSale = async () => {
+  const handleCompleteSale = () => {
     const transactionId = `txn_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-    
+
     // Add transaction to local state as pending
     const newTransaction: Transaction = {
       id: transactionId,
       timestamp: new Date().toISOString(),
       items: [...cart],
       total,
-      status: "pending"
+      status: "pending",
     }
-    setTransactions(prev => [newTransaction, ...prev])
+    setTransactions((prev) => [newTransaction, ...prev])
 
-    try {
-      await fetch(`${PAYMENT_TERMINAL_URL}/api/checkout/status`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transactionId,
-          vendorName: VENDOR_NAME,
-          items: cart,
-          total,
-          storeId: STORE_ID,
-          programId: PROGRAM_ID,
-        }),
-      })
+    const checkoutPayload: CheckoutRequestPayload = {
+      transactionId,
+      vendorName: VENDOR_NAME,
+      items: [...cart],
+      total,
+      storeId: STORE_ID,
+      programId: PROGRAM_ID,
+    }
 
-      window.open(PAYMENT_TERMINAL_URL, "_blank")
+    setPendingTerminalRequest(checkoutPayload)
+
+    const popup = window.open(PAYMENT_TERMINAL_URL, "payment-terminal", "width=480,height=800")
+    if (popup) {
+      terminalWindowRef.current = popup
+      popup.focus()
+      setTerminalReady(false)
       clearCart()
-      
-      // Simulate transaction completion after some time
-      setTimeout(() => {
-        setTransactions(prev => 
-          prev.map(t => 
-            t.id === transactionId 
-              ? { ...t, status: "completed" as const }
-              : t
-          )
-        )
-      }, 30000) // Mark as completed after 30 seconds
-
-    } catch (error) {
-      console.error("Failed to send transaction to payment terminal", error)
-      // Mark transaction as failed
-      setTransactions(prev => 
-        prev.map(t => 
-          t.id === transactionId 
-            ? { ...t, status: "failed" as const }
-            : t
-        )
-      )
+    } else {
+      console.error("Failed to open payment terminal window")
+      updateTransactionStatus(transactionId, "failed")
+      setPendingTerminalRequest(null)
     }
   }
 
@@ -163,6 +325,8 @@ export default function POSCheckout() {
     switch (status) {
       case "pending":
         return <Clock className="h-4 w-4 text-yellow-600" />
+      case "processing":
+        return <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
       case "completed":
         return <CheckCircle className="h-4 w-4 text-green-600" />
       case "failed":
@@ -174,6 +338,8 @@ export default function POSCheckout() {
     switch (status) {
       case "pending":
         return "bg-yellow-100 text-yellow-800"
+      case "processing":
+        return "bg-blue-100 text-blue-800"
       case "completed":
         return "bg-green-100 text-green-800"
       case "failed":
