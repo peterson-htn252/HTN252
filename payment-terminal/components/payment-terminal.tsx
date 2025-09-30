@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { CameraView, type VerificationResult } from "@/components/camera-view"
@@ -11,6 +11,43 @@ import { CustomerIdleScreen } from "@/components/customer-idle-screen"
 import { WalletDetails } from "@/components/wallet-details"
 import { CreditCard, Shield, Clock } from "lucide-react"
 import { API_BASE_URL } from "@/lib/config"
+
+const DEFAULT_VENDOR_NAME = "Block Terminal"
+
+interface PaymentAuthorizationPayload {
+  voucherId: string
+  transactionId: string
+  storeId: string
+  programId: string
+  amountMinor: number
+  currency: string
+  recipientId: string
+}
+
+interface PaymentTerminalMessageBase {
+  scope: "payment-terminal"
+}
+
+interface CheckoutRequestMessage extends PaymentTerminalMessageBase {
+  type: "checkout_request"
+  transaction: TransactionData & { transactionId: string }
+}
+
+interface PaymentProcessedMessage extends PaymentTerminalMessageBase {
+  type: "payment_processed"
+  transactionId: string
+  status: "success" | "error"
+  result?: unknown
+  error?: string
+}
+
+interface PaymentAuthorizedMessage extends PaymentTerminalMessageBase {
+  type: "payment_authorized"
+  transactionId: string
+  payload: PaymentAuthorizationPayload
+}
+
+type TerminalInboundMessage = CheckoutRequestMessage | PaymentProcessedMessage
 
 export interface CheckoutItem {
   id: string
@@ -39,7 +76,7 @@ type TerminalStep =
 export function PaymentTerminal() {
   const [currentStep, setCurrentStep] = useState<TerminalStep>("idle")
   const [transactionData, setTransactionData] = useState<TransactionData | null>(null)
-  const [vendorName, setVendorName] = useState("Block Terminal")
+  const [vendorName, setVendorName] = useState(DEFAULT_VENDOR_NAME)
   const [walletInfo, setWalletInfo] = useState<{
     recipientId: string
     publicKey: string
@@ -48,31 +85,40 @@ export function PaymentTerminal() {
   } | null>(null)
   const [paymentError, setPaymentError] = useState<string | null>(null)
 
+  const storeWindowRef = useRef<Window | null>(null)
+  const storeOriginRef = useRef<string | null>(null)
+  const transactionRef = useRef<TransactionData | null>(null)
+
   useEffect(() => {
-    const checkForTransaction = async () => {
-      try {
-        const response = await fetch("/api/checkout/status")
-        if (response.ok) {
-          const data = await response.json()
-          if (data.transaction) {
-            setTransactionData(data.transaction)
-            setVendorName(data.transaction.vendorName)
-            setCurrentStep("checkout")
-          }
-        }
-      } catch (error) {
-        console.error("Error checking for transaction:", error)
-      }
+    transactionRef.current = transactionData
+  }, [transactionData])
+
+  const sendMessageToStore = useCallback((message: PaymentTerminalMessageBase & Record<string, unknown>) => {
+    if (!storeWindowRef.current) {
+      return false
+    }
+    const targetOrigin = storeOriginRef.current ?? "*"
+    try {
+      storeWindowRef.current.postMessage(message, targetOrigin)
+      return true
+    } catch (error) {
+      console.error("Failed to postMessage to store dashboard", error)
+      return false
+    }
+  }, [])
+
+  const handlePaymentComplete = useCallback((_result?: unknown) => {
+    const activeTransaction = transactionRef.current
+    if (!activeTransaction) {
+      setCurrentStep("idle")
+      setVendorName(DEFAULT_VENDOR_NAME)
+      setTransactionData(null)
+      setWalletInfo(null)
+      setPaymentError(null)
+      return
     }
 
-    const interval = currentStep === "idle" ? setInterval(checkForTransaction, 500) : null
-
-    return () => {
-      if (interval) clearInterval(interval)
-    }
-  }, [currentStep])
-
-  const handlePaymentComplete = () => {
+    setPaymentError(null)
     setCurrentStep("accepted")
 
     const audio = new Audio("/Happy.m4a")
@@ -83,10 +129,81 @@ export function PaymentTerminal() {
     setTimeout(() => {
       setCurrentStep("idle")
       setTransactionData(null)
+      transactionRef.current = null
       setWalletInfo(null)
       setPaymentError(null)
+      setVendorName(DEFAULT_VENDOR_NAME)
     }, 3000)
-  }
+  }, [])
+
+  useEffect(() => {
+    const inferOriginFromReferrer = () => {
+      if (storeOriginRef.current || typeof document === "undefined") {
+        return
+      }
+      if (!document.referrer) {
+        return
+      }
+      try {
+        const origin = new URL(document.referrer).origin
+        storeOriginRef.current = origin
+      } catch {
+        // Ignore invalid referrers (e.g., about:blank)
+      }
+    }
+
+    const handleInboundMessage = (event: MessageEvent) => {
+      const data = event.data as TerminalInboundMessage | PaymentTerminalMessageBase | null
+      if (!data || typeof data !== "object" || data.scope !== "payment-terminal") {
+        return
+      }
+
+      if (event.origin && event.origin !== "null") {
+        storeOriginRef.current = event.origin
+      }
+      if (event.source && "postMessage" in event.source) {
+        storeWindowRef.current = event.source as Window
+      }
+
+      if (data.type === "checkout_request") {
+        setTransactionData(data.transaction)
+        transactionRef.current = data.transaction
+        setVendorName(data.transaction.vendorName)
+        setCurrentStep("checkout")
+        setWalletInfo(null)
+        setPaymentError(null)
+        return
+      }
+
+      if (data.type === "payment_processed") {
+        const activeTransaction = transactionRef.current
+        if (!activeTransaction || activeTransaction.transactionId !== data.transactionId) {
+          return
+        }
+
+        if (data.status === "success") {
+          handlePaymentComplete(data.result)
+          return
+        }
+
+        setPaymentError(data.error ?? "Payment failed. Please try again.")
+        setCurrentStep("wallet")
+      }
+    }
+
+    inferOriginFromReferrer()
+    window.addEventListener("message", handleInboundMessage)
+
+    if (typeof window !== "undefined" && window.opener) {
+      storeWindowRef.current = window.opener
+      inferOriginFromReferrer()
+      sendMessageToStore({ scope: "payment-terminal", type: "terminal_ready" })
+    }
+
+    return () => {
+      window.removeEventListener("message", handleInboundMessage)
+    }
+  }, [handlePaymentComplete, sendMessageToStore])
 
   const handleCheckout = () => {
     setCurrentStep("verification")
@@ -132,39 +249,41 @@ export function PaymentTerminal() {
     }
   }
 
-  const handleWalletConfirm = async () => {
-    if (!transactionData || !walletInfo) return
-    
+  const handleWalletConfirm = () => {
+    const activeTransaction = transactionRef.current
+    if (!activeTransaction || !walletInfo) {
+      return
+    }
+
     setCurrentStep("processing")
     setPaymentError(null)
 
-    try {
-      // Call the /redeem endpoint to process the actual payment
-      const redeemRes = await fetch(`${API_BASE_URL}/redeem`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          voucher_id: transactionData.transactionId || `voucher_${Date.now()}`,
-          store_id: transactionData.storeId || "store_001",
-          recipient_id: walletInfo.recipientId,
-          program_id: transactionData.programId || "general_aid",
-          amount_minor: Math.round(transactionData.total * 100), // Convert to minor units (cents)
-          currency: "USD"
-        }),
-      })
+    if (!storeWindowRef.current) {
+      setPaymentError("Unable to reach the store dashboard. Please restart the checkout from the store.")
+      setCurrentStep("wallet")
+      return
+    }
 
-      if (!redeemRes.ok) {
-        const errorData = await redeemRes.json().catch(() => ({}))
-        throw new Error(errorData.detail || `Payment failed: ${redeemRes.status}`)
-      }
+    const payload: PaymentAuthorizationPayload = {
+      voucherId: activeTransaction.transactionId ?? `voucher_${Date.now()}`,
+      transactionId: activeTransaction.transactionId ?? `txn_${Date.now()}`,
+      storeId: activeTransaction.storeId || "store_001",
+      programId: activeTransaction.programId || "general_aid",
+      amountMinor: Math.round((activeTransaction.total || 0) * 100),
+      currency: "USD",
+      recipientId: walletInfo.recipientId,
+    }
 
-      const redeemData = await redeemRes.json()
-      
-      // Payment successful
-      handlePaymentComplete()
-    } catch (error) {
-      console.error("Payment processing failed:", error)
-      setPaymentError(error instanceof Error ? error.message : "Payment processing failed. Please try again.")
+    const message: PaymentAuthorizedMessage = {
+      scope: "payment-terminal",
+      type: "payment_authorized",
+      transactionId: payload.transactionId,
+      payload,
+    }
+
+    const posted = sendMessageToStore(message)
+    if (!posted) {
+      setPaymentError("Unable to notify the store dashboard. Please retry from the store.")
       setCurrentStep("wallet")
     }
   }
