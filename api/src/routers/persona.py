@@ -174,7 +174,7 @@ def fetch_inquiry_summary(body: InquirySummaryRequest) -> InquirySummary:
         inquiry_id=inquiry_id,
         status=as_string(attributes.get("status")),
         reference_id=reference_id,
-        ngo_id=body.ngo_id or body.account_id,
+        ngo_id=body.ngo_id,
         account_id=body.account_id,
         first_name=normalized.get("first_name"),
         last_name=normalized.get("last_name"),
