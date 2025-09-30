@@ -3,7 +3,7 @@ FROM python:3.11-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    INSIGHTFACE_ROOT=~/.insightface
+    INSIGHTFACE_ROOT=/home/appuser/.insightface
 
 # Install system build/runtime dependencies for scientific stack
 RUN apt-get update && apt-get install -y --no-install-recommends \

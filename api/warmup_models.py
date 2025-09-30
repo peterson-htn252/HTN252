@@ -11,7 +11,7 @@ from insightface.app import FaceAnalysis
 
 
 def main():
-    root = os.environ.get("INSIGHTFACE_ROOT", "~/.insightface")
+    root = os.environ.get("INSIGHTFACE_ROOT", "/home/appuser/.insightface")
     models = ["buffalo_l", "antelopev2", "buffalo_sc"]
 
     def build(name):
