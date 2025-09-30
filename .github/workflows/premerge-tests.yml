@@ -2,9 +2,8 @@ name: Premerge Tests
 
 on:
   push:
-    branches:
+    branches-ignore:
       - main
-      - work
   pull_request:
     branches:
       - main
