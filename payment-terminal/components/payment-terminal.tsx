@@ -3,7 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { CameraView, type VerificationResult } from "@/components/camera-view"
+import {
+  CameraView,
+  type CameraViewHandle,
+  type VerificationResult,
+} from "@/components/camera-view"
 import { TransactionSummary } from "@/components/transaction-summary"
 import { PaymentActions } from "@/components/payment-actions"
 import { PaymentAccepted } from "@/components/payment-accepted"
@@ -12,7 +16,7 @@ import { WalletDetails } from "@/components/wallet-details"
 import { CreditCard, Shield, Clock } from "lucide-react"
 import { API_BASE_URL } from "@/lib/config"
 
-const DEFAULT_VENDOR_NAME = "Block Terminal"
+const DEFAULT_VENDOR_NAME = "Payment Terminal"
 
 interface PaymentAuthorizationPayload {
   voucherId: string
@@ -89,6 +93,8 @@ export function PaymentTerminal() {
   const storeWindowRef = useRef<Window | null>(null)
   const storeOriginRef = useRef<string | null>(null)
   const transactionRef = useRef<TransactionData | null>(null)
+  const cameraRef = useRef<CameraViewHandle | null>(null)
+  const autoCameraAttemptedRef = useRef(false)
 
   useEffect(() => {
     transactionRef.current = transactionData
@@ -119,6 +125,7 @@ export function PaymentTerminal() {
       return
     }
 
+    cameraRef.current?.stop()
     setPaymentError(null)
     setCurrentStep("accepted")
 
@@ -219,6 +226,43 @@ export function PaymentTerminal() {
     setCurrentStep("verification")
     setPaymentError(null)
   }
+
+  useEffect(() => {
+    if (currentStep !== "verification") {
+      cameraRef.current?.stop()
+      autoCameraAttemptedRef.current = false
+      return
+    }
+
+    if (autoCameraAttemptedRef.current) {
+      return
+    }
+    autoCameraAttemptedRef.current = true
+
+    let cancelled = false
+    const handle = cameraRef.current
+
+    const startCamera = async () => {
+      try {
+        await handle?.start({ userInitiated: false })
+        setPaymentError(null)
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+        console.error("Camera start failed:", error)
+        setPaymentError("Unable to access camera automatically. Please click 'Enable Camera'.")
+        autoCameraAttemptedRef.current = false
+      }
+    }
+
+    startCamera()
+
+    return () => {
+      cancelled = true
+      handle?.stop()
+    }
+  }, [currentStep])
 
   const handleVerificationResult = async (result: VerificationResult) => {
     if (result.success && result.publicKey && result.recipientId) {
@@ -340,9 +384,10 @@ export function PaymentTerminal() {
                 <CardTitle className="flex items-center gap-2">Customer Verification</CardTitle>
               </CardHeader>
               <CardContent>
-                <CameraView 
-                  currentStep={currentStep} 
-                  onVerificationComplete={handleVerificationResult} 
+                <CameraView
+                  ref={cameraRef}
+                  currentStep={currentStep}
+                  onVerificationComplete={handleVerificationResult}
                 />
               </CardContent>
             </Card>

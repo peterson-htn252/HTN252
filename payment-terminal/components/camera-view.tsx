@@ -1,6 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Camera, CameraOff, CheckCircle } from "lucide-react"
@@ -22,12 +29,26 @@ interface CameraViewProps {
   onVerificationComplete: (result: VerificationResult) => void
 }
 
-export function CameraView({ currentStep, onVerificationComplete }: CameraViewProps) {
+interface StartCameraOptions {
+  userInitiated?: boolean
+}
+
+export interface CameraViewHandle {
+  start: (options?: StartCameraOptions) => Promise<void>
+  stop: () => void
+}
+
+export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(function CameraView(
+  { currentStep, onVerificationComplete }: CameraViewProps,
+  ref,
+) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [cameraEnabled, setCameraEnabled] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [verificationProgress, setVerificationProgress] = useState(0)
+  const streamRef = useRef<MediaStream | null>(null)
+  const lastStartUserInitiatedRef = useRef(false)
 
   /**
    * Capture a burst of frames from the webcam and POST them to the
@@ -37,6 +58,27 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
    */
   const verifyFace = useCallback(async () => {
     if (!videoRef.current) return
+
+    const waitForVideoReady = async () => {
+      const maxAttempts = 20
+      const delay = 150
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        if (!videoRef.current) break
+        if (videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+          return true
+        }
+        await new Promise((resolve) => setTimeout(resolve, delay))
+      }
+      return false
+    }
+
+    const hasDimensions = await waitForVideoReady()
+    if (!hasDimensions || !videoRef.current) {
+      onVerificationComplete({ success: false, error: "Camera feed unavailable" })
+      setVerificationProgress(0)
+      return
+    }
 
     const canvas = document.createElement("canvas")
     const ctx = canvas.getContext("2d")
@@ -48,15 +90,22 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
       canvas.width = videoRef.current.videoWidth
       canvas.height = videoRef.current.videoHeight
       ctx?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
-      
+
       const blob: Blob | null = await new Promise((resolve) =>
         canvas.toBlob((b) => resolve(b), "image/jpeg", 0.8)
       )
-      
+
       if (blob) {
         frames.push(blob)
+      } else {
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.8)
+        const res = await fetch(dataUrl)
+        const fallbackBlob = await res.blob().catch(() => null)
+        if (fallbackBlob) {
+          frames.push(fallbackBlob)
+        }
       }
-      
+
       // Update progress to show capture advancement (up to 50%)
       setVerificationProgress(((i + 1) / 5) * 50)
       await new Promise((r) => setTimeout(r, 200))
@@ -79,10 +128,14 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
     })
 
     try {
+      const controller = new AbortController()
+      const timeoutId = window.setTimeout(() => controller.abort(), 100000)
       const resp = await fetch(`${API_BASE_URL}/face/identify_batch`, {
         method: "POST",
         body: fd,
+        signal: controller.signal,
       })
+      window.clearTimeout(timeoutId)
       const data = await resp.json().catch(() => ({}))
       const topMatch = Array.isArray(data.matches) && data.matches[0]
       const success = resp.ok && Boolean(topMatch)
@@ -99,48 +152,132 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
     }
   }, [onVerificationComplete])
 
-  const startCamera = async () => {
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: "user",
-        },
-      })
-      setStream(mediaStream)
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream
-      }
-      setCameraEnabled(true)
-      setError(null)
-    } catch (err) {
-      setError("Camera access denied. Please enable camera permissions.")
-      console.error("Error accessing camera:", err)
+  const stopCamera = useCallback(() => {
+    const activeStream = streamRef.current ?? stream
+    if (activeStream) {
+      activeStream.getTracks().forEach((track) => track.stop())
     }
-  }
-
-  const stopCamera = () => {
+    streamRef.current = null
     if (stream) {
-      stream.getTracks().forEach((track) => track.stop())
       setStream(null)
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+      videoRef.current.load()
+    }
     setCameraEnabled(false)
-  }
+  }, [stream])
+
+  const startCamera = useCallback(
+    async ({ userInitiated = false }: StartCameraOptions = {}) => {
+      try {
+        lastStartUserInitiatedRef.current = userInitiated
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: "user",
+          },
+        })
+        setStream(mediaStream)
+        streamRef.current = mediaStream
+        setCameraEnabled(true)
+        setError(null)
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error("camera-error")
+        console.error("Error accessing camera:", error)
+        const errMessage =
+          error.message === "autoplay-blocked"
+            ? "Automatic camera start was blocked. Please click 'Enable Camera'."
+            : "Camera access denied. Please enable camera permissions."
+        setError(errMessage)
+        stopCamera()
+        throw error
+      }
+    },
+    [stopCamera],
+  )
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      start: (options?: StartCameraOptions) => startCamera(options),
+      stop: () => stopCamera(),
+    }),
+    [startCamera, stopCamera],
+  )
 
   useEffect(() => {
-    if (currentStep === "verification" && !cameraEnabled) {
-      startCamera()
+    const video = videoRef.current
+    if (!video || !stream) {
+      return
     }
-  }, [currentStep, cameraEnabled])
 
-  useEffect(() => {
-    if (currentStep === "verification" && cameraEnabled) {
-      // Reset progress and begin verification routine once
+    let cancelled = false
+    const userInitiated = lastStartUserInitiatedRef.current
+
+    const attachAndVerify = async () => {
+      try {
+        await video.play()
+      } catch (playError) {
+        const normalized =
+          playError instanceof Error
+            ? playError
+            : new Error(typeof playError === "string" ? playError : "playback-failed")
+
+        if (
+          !userInitiated &&
+          (normalized.name === "NotAllowedError" || normalized.message === "autoplay-blocked")
+        ) {
+          setError("Automatic camera start was blocked. Please click 'Enable Camera'.")
+        } else {
+          setError(normalized.message || "Unable to start camera.")
+        }
+        stopCamera()
+        return
+      }
+
+      if (cancelled) {
+        return
+      }
+
       setVerificationProgress(0)
-      verifyFace()
+      try {
+        await verifyFace()
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Face verification failed", err)
+          setError(err instanceof Error ? err.message : "Face verification failed.")
+        }
+      }
     }
-  }, [cameraEnabled, currentStep, verifyFace])
+
+    video.srcObject = stream
+
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      attachAndVerify()
+    } else {
+      const handleLoaded = () => {
+        video.removeEventListener("loadeddata", handleLoaded)
+        if (!cancelled) {
+          attachAndVerify()
+        }
+      }
+      video.addEventListener("loadeddata", handleLoaded)
+    }
+
+    return () => {
+      cancelled = true
+      video.pause()
+    }
+  }, [stream, stopCamera, verifyFace])
+
+  useEffect(() => {
+    if (currentStep !== "verification" && cameraEnabled) {
+      stopCamera()
+      setVerificationProgress(0)
+    }
+  }, [cameraEnabled, currentStep, stopCamera])
 
   useEffect(() => {
     return () => {
@@ -229,7 +366,13 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
 
         <div className="flex gap-2">
           {!cameraEnabled ? (
-            <Button onClick={startCamera} variant="outline" size="sm">
+            <Button
+              onClick={() => {
+                startCamera({ userInitiated: true }).catch(() => {})
+              }}
+              variant="outline"
+              size="sm"
+            >
               <Camera className="w-4 h-4 mr-2" />
               Enable Camera
             </Button>
@@ -255,4 +398,4 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
       </div>
     </div>
   )
-}
+})
