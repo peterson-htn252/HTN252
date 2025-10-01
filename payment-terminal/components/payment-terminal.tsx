@@ -82,7 +82,7 @@ export function PaymentTerminal() {
   const [currentStep, setCurrentStep] = useState<TerminalStep>("idle")
   const [transactionData, setTransactionData] = useState<TransactionData | null>(null)
   const [vendorName, setVendorName] = useState(DEFAULT_VENDOR_NAME)
-  const [walletInfo, setWalletInfo] = useState<WalletDetailsProps | null>(null)
+  const [walletInfo, setWalletInfo] = useState<WalletDetailsProps["walletInfo"] | null>(null)
   const [paymentError, setPaymentError] = useState<string | null>(null)
 
   const storeWindowRef = useRef<Window | null>(null)
