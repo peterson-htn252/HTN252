@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -11,7 +11,6 @@ interface PaymentActionsProps {
   currentStep: string
   onStepChange: (step: string) => void
   onCheckout: () => void
-  onPaymentComplete: () => void
   onWalletConfirm: () => void
   transactionData: TransactionData | null
 }
@@ -20,24 +19,32 @@ export function PaymentActions({
   currentStep,
   onStepChange,
   onCheckout,
-  onPaymentComplete,
   onWalletConfirm,
   transactionData,
 }: PaymentActionsProps) {
   const [progress, setProgress] = useState(0)
 
-  const handleProcessing = () => {
+  useEffect(() => {
+    if (currentStep !== "processing") {
+      setProgress(0)
+      return
+    }
+
     let currentProgress = 0
-    const interval = setInterval(() => {
+    const intervalId = window.setInterval(() => {
       currentProgress += Math.random() * 15
-      setProgress(Math.min(currentProgress, 100))
+      const nextProgress = Math.min(currentProgress, 100)
+      setProgress(nextProgress)
 
+      if (nextProgress >= 100) {
+        window.clearInterval(intervalId)
+      }
     }, 200)
-  }
 
-  if (currentStep === "processing" && progress === 0) {
-    handleProcessing()
-  }
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [currentStep])
 
   const handleCancel = () => {
     onStepChange("checkout")

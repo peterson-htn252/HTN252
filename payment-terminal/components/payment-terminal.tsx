@@ -26,6 +26,7 @@ interface PaymentAuthorizationPayload {
 
 interface PaymentTerminalMessageBase {
   scope: "payment-terminal"
+  type?: string
 }
 
 interface CheckoutRequestMessage extends PaymentTerminalMessageBase {
@@ -93,7 +94,7 @@ export function PaymentTerminal() {
     transactionRef.current = transactionData
   }, [transactionData])
 
-  const sendMessageToStore = useCallback((message: PaymentTerminalMessageBase & Record<string, unknown>) => {
+  const sendMessageToStore = useCallback((message: PaymentTerminalMessageBase) => {
     if (!storeWindowRef.current) {
       return false
     }
@@ -107,7 +108,7 @@ export function PaymentTerminal() {
     }
   }, [])
 
-  const handlePaymentComplete = useCallback((_result?: unknown) => {
+  const handlePaymentComplete = useCallback(() => {
     const activeTransaction = transactionRef.current
     if (!activeTransaction) {
       setCurrentStep("idle")
@@ -153,8 +154,13 @@ export function PaymentTerminal() {
     }
 
     const handleInboundMessage = (event: MessageEvent) => {
-      const data = event.data as TerminalInboundMessage | PaymentTerminalMessageBase | null
-      if (!data || typeof data !== "object" || data.scope !== "payment-terminal") {
+      const incoming = event.data
+      if (!incoming || typeof incoming !== "object") {
+        return
+      }
+
+      const scopedMessage = incoming as Partial<PaymentTerminalMessageBase>
+      if (scopedMessage.scope !== "payment-terminal") {
         return
       }
 
@@ -165,28 +171,32 @@ export function PaymentTerminal() {
         storeWindowRef.current = event.source as Window
       }
 
-      if (data.type === "checkout_request") {
-        setTransactionData(data.transaction)
-        transactionRef.current = data.transaction
-        setVendorName(data.transaction.vendorName)
+      const typedMessage = incoming as Partial<TerminalInboundMessage>
+
+      if (typedMessage.type === "checkout_request") {
+        const checkoutMessage = incoming as CheckoutRequestMessage
+        setTransactionData(checkoutMessage.transaction)
+        transactionRef.current = checkoutMessage.transaction
+        setVendorName(checkoutMessage.transaction.vendorName)
         setCurrentStep("checkout")
         setWalletInfo(null)
         setPaymentError(null)
         return
       }
 
-      if (data.type === "payment_processed") {
+      if (typedMessage.type === "payment_processed") {
+        const processedMessage = incoming as PaymentProcessedMessage
         const activeTransaction = transactionRef.current
-        if (!activeTransaction || activeTransaction.transactionId !== data.transactionId) {
+        if (!activeTransaction || activeTransaction.transactionId !== processedMessage.transactionId) {
           return
         }
 
-        if (data.status === "success") {
-          handlePaymentComplete(data.result)
+        if (processedMessage.status === "success") {
+          handlePaymentComplete()
           return
         }
 
-        setPaymentError(data.error ?? "Payment failed. Please try again.")
+        setPaymentError(processedMessage.error ?? "Payment failed. Please try again.")
         setCurrentStep("wallet")
       }
     }
@@ -359,7 +369,6 @@ export function PaymentTerminal() {
             currentStep={currentStep}
             onStepChange={(step: string) => setCurrentStep(step as TerminalStep)}
             onCheckout={handleCheckout}
-            onPaymentComplete={handlePaymentComplete}
             onWalletConfirm={handleWalletConfirm}
             transactionData={transactionData}
           />

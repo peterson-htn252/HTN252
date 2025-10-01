@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       items: body.items,
       total: body.total,
     }, { headers: corsHeaders })
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: "Invalid JSON format" }, { status: 400, headers: corsHeaders })
   }
 }
