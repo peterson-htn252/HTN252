@@ -2,12 +2,9 @@ name: Premerge Tests
 
 on:
   push:
-    branches-ignore:
-      - main
   pull_request:
     branches:
-      - main
-      - work
+      - '**'
 
 jobs:
   backend-tests:
