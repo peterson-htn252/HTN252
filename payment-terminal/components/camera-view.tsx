@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Camera, CameraOff, CheckCircle } from "lucide-react"
@@ -35,7 +35,7 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
    * implemented in `routers/face.py` and expects multiple images under
    * the `files` field.
    */
-  const verifyFace = async () => {
+  const verifyFace = useCallback(async () => {
     if (!videoRef.current) return
 
     const canvas = document.createElement("canvas")
@@ -97,7 +97,7 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
       setVerificationProgress(100)
       onVerificationComplete?.({ success: false })
     }
-  }
+  }, [onVerificationComplete])
 
   const startCamera = async () => {
     try {
@@ -140,7 +140,7 @@ export function CameraView({ currentStep, onVerificationComplete }: CameraViewPr
       setVerificationProgress(0)
       verifyFace()
     }
-  }, [currentStep, cameraEnabled])
+  }, [cameraEnabled, currentStep, verifyFace])
 
   useEffect(() => {
     return () => {
