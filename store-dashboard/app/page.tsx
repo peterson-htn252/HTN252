@@ -88,6 +88,7 @@ export default function POSCheckout() {
   const [terminalReady, setTerminalReady] = useState(false)
 
   const terminalWindowRef = useRef<Window | null>(null)
+  const activeTransactionIdRef = useRef<string | null>(null)
 
   const terminalOrigin = useMemo(() => {
     try {
@@ -116,19 +117,31 @@ export default function POSCheckout() {
     [terminalOrigin],
   )
 
-  const updateTransactionStatus = useCallback((transactionId: string, status: Transaction["status"], extra?: Partial<Transaction>) => {
-    setTransactions((prev) =>
-      prev.map((transaction) =>
-        transaction.id === transactionId
-          ? {
-              ...transaction,
-              ...extra,
-              status,
-            }
-          : transaction,
-      ),
-    )
-  }, [])
+  const updateTransactionStatus = useCallback(
+    (
+      transactionId: string,
+      status: Transaction["status"],
+      extra?: Partial<Transaction>,
+      allowedStatuses?: Transaction["status"][],
+    ) => {
+      setTransactions((prev) =>
+        prev.map((transaction) => {
+          if (transaction.id !== transactionId) {
+            return transaction
+          }
+          if (allowedStatuses && !allowedStatuses.includes(transaction.status)) {
+            return transaction
+          }
+          return {
+            ...transaction,
+            ...extra,
+            status,
+          }
+        }),
+      )
+    },
+    [],
+  )
 
   const processAuthorizedPayment = useCallback(
     async (payload: PaymentAuthorizationPayload) => {
@@ -162,6 +175,9 @@ export default function POSCheckout() {
           status: "success",
           result,
         })
+        activeTransactionIdRef.current = null
+        terminalWindowRef.current = null
+        setTerminalReady(false)
       } catch (error) {
         const message = error instanceof Error ? error.message : "Payment failed. Please try again."
         updateTransactionStatus(payload.transactionId, "failed")
@@ -172,6 +188,9 @@ export default function POSCheckout() {
           status: "error",
           error: message,
         })
+        activeTransactionIdRef.current = null
+        terminalWindowRef.current = null
+        setTerminalReady(false)
       }
     },
     [sendMessageToTerminal, updateTransactionStatus],
@@ -225,6 +244,27 @@ export default function POSCheckout() {
       setPendingTerminalRequest(null)
     }
   }, [pendingTerminalRequest, sendMessageToTerminal, terminalReady])
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    const interval = window.setInterval(() => {
+      if (activeTransactionIdRef.current && terminalWindowRef.current && terminalWindowRef.current.closed) {
+        const failedId = activeTransactionIdRef.current
+        activeTransactionIdRef.current = null
+        terminalWindowRef.current = null
+        setTerminalReady(false)
+        setPendingTerminalRequest(null)
+        updateTransactionStatus(failedId, "failed", undefined, ["pending", "processing"])
+      }
+    }, 1000)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [updateTransactionStatus])
 
   const addItemById = (productId: string) => {
     const product = products.find((p) => p.id === productId)
@@ -291,6 +331,7 @@ export default function POSCheckout() {
       status: "pending",
     }
     setTransactions((prev) => [newTransaction, ...prev])
+    activeTransactionIdRef.current = transactionId
 
     const checkoutPayload: CheckoutRequestPayload = {
       transactionId,
@@ -313,6 +354,7 @@ export default function POSCheckout() {
       console.error("Failed to open payment terminal window")
       updateTransactionStatus(transactionId, "failed")
       setPendingTerminalRequest(null)
+      activeTransactionIdRef.current = null
     }
   }
 

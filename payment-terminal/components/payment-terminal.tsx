@@ -12,7 +12,7 @@ import { TransactionSummary } from "@/components/transaction-summary"
 import { PaymentActions } from "@/components/payment-actions"
 import { PaymentAccepted } from "@/components/payment-accepted"
 import { CustomerIdleScreen } from "@/components/customer-idle-screen"
-import { WalletDetails } from "@/components/wallet-details"
+import { WalletDetails, type WalletDetailsProps } from "@/components/wallet-details"
 import { CreditCard, Shield, Clock } from "lucide-react"
 import { API_BASE_URL } from "@/lib/config"
 
@@ -82,12 +82,7 @@ export function PaymentTerminal() {
   const [currentStep, setCurrentStep] = useState<TerminalStep>("idle")
   const [transactionData, setTransactionData] = useState<TransactionData | null>(null)
   const [vendorName, setVendorName] = useState(DEFAULT_VENDOR_NAME)
-  const [walletInfo, setWalletInfo] = useState<{
-    recipientId: string
-    publicKey: string
-    balanceUsd?: number
-    recipientBalance?: number
-  } | null>(null)
+  const [walletInfo, setWalletInfo] = useState<WalletDetailsProps | null>(null)
   const [paymentError, setPaymentError] = useState<string | null>(null)
 
   const storeWindowRef = useRef<Window | null>(null)
@@ -135,6 +130,11 @@ export function PaymentTerminal() {
     })
 
     setTimeout(() => {
+      if (typeof window !== "undefined" && window.opener && !window.opener.closed) {
+        window.close()
+        return
+      }
+
       setCurrentStep("idle")
       setTransactionData(null)
       transactionRef.current = null
@@ -290,6 +290,7 @@ export function PaymentTerminal() {
           publicKey: result.publicKey,
           balanceUsd: walletBalance,
           recipientBalance: walletBalance,  // Same as wallet balance since that's what matters
+          remainingBalance: walletBalance - transactionAmount,
         })
         setCurrentStep("wallet")
       } catch (error) {

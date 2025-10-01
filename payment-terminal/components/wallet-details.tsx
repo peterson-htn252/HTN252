@@ -4,12 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Wallet } from "lucide-react"
 
-interface WalletDetailsProps {
+export interface WalletDetailsProps {
   walletInfo: {
     recipientId: string
     publicKey: string
     balanceUsd?: number
     recipientBalance?: number
+    remainingBalance?: number
   }
 }
 
@@ -32,19 +33,19 @@ export function WalletDetails({ walletInfo }: WalletDetailsProps) {
           <p className="font-mono break-all text-xs">{walletInfo.publicKey}</p>
         </div>
         <div className="space-y-2 pt-2 border-t">
-          {typeof walletInfo.recipientBalance === "number" && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Voucher Balance</span>
-              <Badge variant="default" className="bg-green-600">
-                ${walletInfo.recipientBalance.toFixed(2)}
-              </Badge>
-            </div>
-          )}
           {typeof walletInfo.balanceUsd === "number" && (
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Wallet Balance (USD)</span>
-              <Badge variant="secondary">
+              <Badge className="bg-green-600">
                 ${walletInfo.balanceUsd.toFixed(2)}
+              </Badge>
+            </div>
+          )}
+          {typeof walletInfo.remainingBalance === "number" && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Remaining Balance (USD)</span>
+              <Badge variant="secondary">
+                ${walletInfo.remainingBalance.toFixed(2)}
               </Badge>
             </div>
           )}
